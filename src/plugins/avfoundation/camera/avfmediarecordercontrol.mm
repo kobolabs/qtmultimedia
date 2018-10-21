@@ -1,39 +1,31 @@
 /****************************************************************************
 **
-** Copyright (C) 2013 Digia Plc and/or its subsidiary(-ies).
-** Contact: http://www.qt-project.org/legal
+** Copyright (C) 2016 The Qt Company Ltd and/or its subsidiary(-ies).
+** Contact: http://www.qt.io/licensing/
 **
 ** This file is part of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL$
+** $QT_BEGIN_LICENSE:LGPL21$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and Digia.  For licensing terms and
-** conditions see http://qt.digia.com/licensing.  For further information
-** use the contact form at http://qt.digia.com/contact-us.
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see http://www.qt.io/terms-conditions. For further
+** information use the contact form at http://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU Lesser General Public License version 2.1 requirements
-** will be met: http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 2.1 or version 3 as published by the Free
+** Software Foundation and appearing in the file LICENSE.LGPLv21 and
+** LICENSE.LGPLv3 included in the packaging of this file. Please review the
+** following information to ensure the GNU Lesser General Public License
+** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
+** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
 **
-** In addition, as a special exception, Digia gives you certain additional
-** rights.  These rights are described in the Digia Qt LGPL Exception
+** As a special exception, The Qt Company gives you certain additional
+** rights. These rights are described in The Qt Company LGPL Exception
 ** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3.0 as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU General Public License version 3.0 requirements will be
-** met: http://www.gnu.org/copyleft/gpl.html.
-**
 **
 ** $QT_END_LICENSE$
 **
@@ -44,6 +36,10 @@
 #include "avfcamerasession.h"
 #include "avfcameraservice.h"
 #include "avfcameracontrol.h"
+#include "avfaudioinputselectorcontrol.h"
+#include "avfaudioencodersettingscontrol.h"
+#include "avfvideoencodersettingscontrol.h"
+#include "avfmediacontainercontrol.h"
 
 #include <QtCore/qurl.h>
 #include <QtCore/qfileinfo.h>
@@ -121,7 +117,9 @@ QT_USE_NAMESPACE
 
 AVFMediaRecorderControl::AVFMediaRecorderControl(AVFCameraService *service, QObject *parent)
    : QMediaRecorderControl(parent)
+   , m_service(service)
    , m_cameraControl(service->cameraControl())
+   , m_audioInputControl(service->audioInputSelectorControl())
    , m_session(service->session())
    , m_connected(false)
    , m_state(QMediaRecorder::StoppedState)
@@ -130,21 +128,30 @@ AVFMediaRecorderControl::AVFMediaRecorderControl(AVFCameraService *service, QObj
    , m_recordingFinished(false)
    , m_muted(false)
    , m_volume(1.0)
+   , m_audioInput(nil)
+   , m_restoreFPS(-1, -1)
 {
     m_movieOutput = [[AVCaptureMovieFileOutput alloc] init];
     m_recorderDelagate = [[AVFMediaRecorderDelegate alloc] initWithRecorder:this];
 
     connect(m_cameraControl, SIGNAL(stateChanged(QCamera::State)), SLOT(updateStatus()));
     connect(m_cameraControl, SIGNAL(statusChanged(QCamera::Status)), SLOT(updateStatus()));
-    connect(m_cameraControl, SIGNAL(captureModeChanged(QCamera::CaptureModes)), SLOT(reconnectMovieOutput()));
-
-    reconnectMovieOutput();
+    connect(m_cameraControl, SIGNAL(captureModeChanged(QCamera::CaptureModes)), SLOT(setupSessionForCapture()));
+    connect(m_session, SIGNAL(readyToConfigureConnections()), SLOT(setupSessionForCapture()));
+    connect(m_session, SIGNAL(stateChanged(QCamera::State)), SLOT(setupSessionForCapture()));
 }
 
 AVFMediaRecorderControl::~AVFMediaRecorderControl()
 {
-    if (m_movieOutput)
+    if (m_movieOutput) {
         [m_session->captureSession() removeOutput:m_movieOutput];
+        [m_movieOutput release];
+    }
+
+    if (m_audioInput) {
+        [m_session->captureSession() removeInput:m_audioInput];
+        [m_audioInput release];
+    }
 
     [m_recorderDelagate release];
 }
@@ -222,6 +229,29 @@ qreal AVFMediaRecorderControl::volume() const
 
 void AVFMediaRecorderControl::applySettings()
 {
+    if (m_state != QMediaRecorder::StoppedState
+            || (m_session->state() != QCamera::ActiveState && m_session->state() != QCamera::LoadedState)
+            || !m_service->cameraControl()->captureMode().testFlag(QCamera::CaptureVideo)) {
+        return;
+    }
+
+    // Configure audio settings
+    [m_movieOutput setOutputSettings:m_service->audioEncoderSettingsControl()->applySettings()
+                   forConnection:[m_movieOutput connectionWithMediaType:AVMediaTypeAudio]];
+
+    // Configure video settings
+    AVCaptureConnection *videoConnection = [m_movieOutput connectionWithMediaType:AVMediaTypeVideo];
+    NSDictionary *videoSettings = m_service->videoEncoderSettingsControl()->applySettings(videoConnection);
+
+    const AVFConfigurationLock lock(m_session->videoCaptureDevice()); // prevents activeFormat from being overridden
+
+    [m_movieOutput setOutputSettings:videoSettings forConnection:videoConnection];
+}
+
+void AVFMediaRecorderControl::unapplySettings()
+{
+    m_service->audioEncoderSettingsControl()->unapplySettings();
+    m_service->videoEncoderSettingsControl()->unapplySettings([m_movieOutput connectionWithMediaType:AVMediaTypeVideo]);
 }
 
 void AVFMediaRecorderControl::setState(QMediaRecorder::State state)
@@ -235,25 +265,27 @@ void AVFMediaRecorderControl::setState(QMediaRecorder::State state)
     case QMediaRecorder::RecordingState:
     {
         if (m_connected) {
-            m_state = QMediaRecorder::RecordingState;
-            m_recordingStarted = false;
-            m_recordingFinished = false;
-
             QString outputLocationPath = m_outputLocation.scheme() == QLatin1String("file") ?
                         m_outputLocation.path() : m_outputLocation.toString();
+
+            QString extension = m_service->mediaContainerControl()->containerFormat();
 
             QUrl actualLocation = QUrl::fromLocalFile(
                         m_storageLocation.generateFileName(outputLocationPath,
                                                            QCamera::CaptureVideo,
                                                            QLatin1String("clip_"),
-                                                           QLatin1String("mp4")));
+                                                           extension));
 
             qDebugCamera() << "Video capture location:" << actualLocation.toString();
 
-            NSString *urlString = [NSString stringWithUTF8String:actualLocation.toString().toUtf8().constData()];
-            NSURL *fileURL = [NSURL URLWithString:urlString];
+            applySettings();
 
-            [m_movieOutput startRecordingToOutputFileURL:fileURL recordingDelegate:m_recorderDelagate];
+            [m_movieOutput startRecordingToOutputFileURL:actualLocation.toNSURL()
+                           recordingDelegate:m_recorderDelagate];
+
+            m_state = QMediaRecorder::RecordingState;
+            m_recordingStarted = false;
+            m_recordingFinished = false;
 
             Q_EMIT actualLocationChanged(actualLocation);
         } else {
@@ -270,6 +302,7 @@ void AVFMediaRecorderControl::setState(QMediaRecorder::State state)
     {
         m_state = QMediaRecorder::StoppedState;
         [m_movieOutput stopRecording];
+        unapplySettings();
     }
     }
 
@@ -317,13 +350,42 @@ void AVFMediaRecorderControl::handleRecordingFailed(const QString &message)
     Q_EMIT error(QMediaRecorder::ResourceError, message);
 }
 
-void AVFMediaRecorderControl::reconnectMovieOutput()
+void AVFMediaRecorderControl::setupSessionForCapture()
 {
     //adding movie output causes high CPU usage even when while recording is not active,
-    //connect it only while video capture mode is enabled
+    //connect it only while video capture mode is enabled.
+    // Similarly, connect the Audio input only in that mode, since it's only necessary
+    // when recording anyway. Adding an Audio input will trigger the microphone permission
+    // request on iOS, but it shoudn't do so until we actually try to record.
     AVCaptureSession *captureSession = m_session->captureSession();
 
-    if (!m_connected && m_cameraControl->captureMode().testFlag(QCamera::CaptureVideo)) {
+    if (!m_connected
+            && m_cameraControl->captureMode().testFlag(QCamera::CaptureVideo)
+            && m_session->state() != QCamera::UnloadedState) {
+
+        // Lock the video capture device to make sure the active format is not reset
+        const AVFConfigurationLock lock(m_session->videoCaptureDevice());
+
+        // Add audio input
+        // Allow recording even if something wrong happens with the audio input initialization
+        AVCaptureDevice *audioDevice = m_audioInputControl->createCaptureDevice();
+        if (!audioDevice) {
+            qWarning("No audio input device available");
+        } else {
+            NSError *error = nil;
+            m_audioInput = [AVCaptureDeviceInput deviceInputWithDevice:audioDevice error:&error];
+
+            if (!m_audioInput) {
+                qWarning() << "Failed to create audio device input";
+            } else if (![captureSession canAddInput:m_audioInput]) {
+                qWarning() << "Could not connect the audio input";
+                m_audioInput = 0;
+            } else {
+                [m_audioInput retain];
+                [captureSession addInput:m_audioInput];
+            }
+        }
+
         if ([captureSession canAddOutput:m_movieOutput]) {
             [captureSession addOutput:m_movieOutput];
             m_connected = true;
@@ -331,8 +393,21 @@ void AVFMediaRecorderControl::reconnectMovieOutput()
             Q_EMIT error(QMediaRecorder::ResourceError, tr("Could not connect the video recorder"));
             qWarning() << "Could not connect the video recorder";
         }
-    } else if (m_connected && !m_cameraControl->captureMode().testFlag(QCamera::CaptureVideo)) {
+    } else if (m_connected
+               && (!m_cameraControl->captureMode().testFlag(QCamera::CaptureVideo)
+                   || m_session->state() == QCamera::UnloadedState)) {
+
+        // Lock the video capture device to make sure the active format is not reset
+        const AVFConfigurationLock lock(m_session->videoCaptureDevice());
+
         [captureSession removeOutput:m_movieOutput];
+
+        if (m_audioInput) {
+            [captureSession removeInput:m_audioInput];
+            [m_audioInput release];
+            m_audioInput = nil;
+        }
+
         m_connected = false;
     }
 

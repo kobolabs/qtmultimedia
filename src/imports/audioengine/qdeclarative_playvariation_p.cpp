@@ -1,39 +1,31 @@
 /****************************************************************************
 **
-** Copyright (C) 2013 Digia Plc and/or its subsidiary(-ies).
-** Contact: http://www.qt-project.org/legal
+** Copyright (C) 2015 The Qt Company Ltd.
+** Contact: http://www.qt.io/licensing/
 **
 ** This file is part of the plugins of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL$
+** $QT_BEGIN_LICENSE:LGPL21$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and Digia.  For licensing terms and
-** conditions see http://qt.digia.com/licensing.  For further information
-** use the contact form at http://qt.digia.com/contact-us.
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see http://www.qt.io/terms-conditions. For further
+** information use the contact form at http://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU Lesser General Public License version 2.1 requirements
-** will be met: http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 2.1 or version 3 as published by the Free
+** Software Foundation and appearing in the file LICENSE.LGPLv21 and
+** LICENSE.LGPLv3 included in the packaging of this file. Please review the
+** following information to ensure the GNU Lesser General Public License
+** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
+** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
 **
-** In addition, as a special exception, Digia gives you certain additional
-** rights.  These rights are described in the Digia Qt LGPL Exception
+** As a special exception, The Qt Company gives you certain additional
+** rights. These rights are described in The Qt Company LGPL Exception
 ** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3.0 as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU General Public License version 3.0 requirements will be
-** met: http://www.gnu.org/copyleft/gpl.html.
-**
 **
 ** $QT_END_LICENSE$
 **
@@ -61,14 +53,11 @@ QT_USE_NAMESPACE
     \inherits Item
     \preliminary
 
-    This type is part of the \b{QtAudioEngine 1.0} module.
-
-    PlayVariation must be defined inside a \l Sound.
+    PlayVariation must be defined inside a \l Sound or be added to it using
+    \l{QtAudioEngine::Sound::addPlayVariation()}{Sound.addPlayVariation()}
+    if PlayVariation is created dynamically.
 
     \qml
-    import QtQuick 2.0
-    import QtAudioEngine 1.0
-
     Rectangle {
         color:"white"
         width: 300
@@ -89,13 +78,14 @@ QT_USE_NAMESPACE
 
             Sound {
                 name:"explosion"
+                playType: Sound.Random
                 PlayVariation {
                     sample:"explosion01"
                     minPitch: 0.8
                     maxPitch: 1.1
                 }
                 PlayVariation {
-                    sample:"explosion01"
+                    sample:"explosion02"
                     minGain: 1.1
                     maxGain: 1.5
                 }
@@ -107,13 +97,13 @@ QT_USE_NAMESPACE
 */
 QDeclarativePlayVariation::QDeclarativePlayVariation(QObject *parent)
     : QObject(parent)
-    , m_complete(false)
     , m_looping(false)
     , m_maxGain(1)
     , m_minGain(1)
     , m_maxPitch(1)
     , m_minPitch(1)
     , m_sampleObject(0)
+    , m_engine(0)
 {
 }
 
@@ -121,15 +111,7 @@ QDeclarativePlayVariation::~QDeclarativePlayVariation()
 {
 }
 
-void QDeclarativePlayVariation::classBegin()
-{
-    if (!parent() || !parent()->inherits("QDeclarativeSound")) {
-        qWarning("PlayVariation must be defined inside Sound!");
-        return;
-    }
-}
-
-void QDeclarativePlayVariation::componentComplete()
+void QDeclarativePlayVariation::setEngine(QDeclarativeAudioEngine *engine)
 {
     if (m_maxGain < m_minGain) {
         qWarning("PlayVariation: maxGain must be no less than minGain");
@@ -139,11 +121,11 @@ void QDeclarativePlayVariation::componentComplete()
         qWarning("PlayVariation: maxPitch must be no less than minPitch");
         qSwap(m_minPitch, m_maxPitch);
     }
-    m_complete = true;
+    m_engine = engine;
 }
 
 /*!
-    \qmlproperty string QtAudioEngine1::PlayVariation::sample
+    \qmlproperty string QtAudioEngine::PlayVariation::sample
 
     This property specifies which \l AudioSample this variation will use.
 */
@@ -154,7 +136,7 @@ QString QDeclarativePlayVariation::sample() const
 
 void QDeclarativePlayVariation::setSample(const QString& sample)
 {
-    if (m_complete) {
+    if (m_engine) {
         qWarning("PlayVariation: cannot change properties after initialization.");
         return;
     }
@@ -162,7 +144,7 @@ void QDeclarativePlayVariation::setSample(const QString& sample)
 }
 
 /*!
-    \qmlproperty bool QtAudioEngine1::PlayVariation::looping
+    \qmlproperty bool QtAudioEngine::PlayVariation::looping
 
     This property indicates whether the playback will be looped or not.
 */
@@ -173,7 +155,7 @@ bool QDeclarativePlayVariation::isLooping() const
 
 void QDeclarativePlayVariation::setLooping(bool looping)
 {
-    if (m_complete) {
+    if (m_engine) {
         qWarning("PlayVariation: cannot change properties after initialization.");
         return;
     }
@@ -181,7 +163,7 @@ void QDeclarativePlayVariation::setLooping(bool looping)
 }
 
 /*!
-    \qmlproperty real QtAudioEngine1::PlayVariation::maxGain
+    \qmlproperty real QtAudioEngine::PlayVariation::maxGain
 
     This property specifies the maximum gain adjustment that can be applied in any playback.
 */
@@ -192,7 +174,7 @@ qreal QDeclarativePlayVariation::maxGain() const
 
 void QDeclarativePlayVariation::setMaxGain(qreal maxGain)
 {
-    if (m_complete) {
+    if (m_engine) {
         qWarning("PlayVariation: cannot change properties after initialization.");
         return;
     }
@@ -204,7 +186,7 @@ void QDeclarativePlayVariation::setMaxGain(qreal maxGain)
 }
 
 /*!
-    \qmlproperty real QtAudioEngine1::PlayVariation::minGain
+    \qmlproperty real QtAudioEngine::PlayVariation::minGain
 
     This property specifies the minimum gain adjustment that can be applied in any playback.
 */
@@ -215,7 +197,7 @@ qreal QDeclarativePlayVariation::minGain() const
 
 void QDeclarativePlayVariation::setMinGain(qreal minGain)
 {
-    if (m_complete) {
+    if (m_engine) {
         qWarning("PlayVariation: cannot change properties after initialization.");
         return;
     }
@@ -227,7 +209,7 @@ void QDeclarativePlayVariation::setMinGain(qreal minGain)
 }
 
 /*!
-    \qmlproperty real QtAudioEngine1::PlayVariation::maxPitch
+    \qmlproperty real QtAudioEngine::PlayVariation::maxPitch
 
     This property specifies the maximum pitch adjustment that can be applied in any playback.
 */
@@ -238,7 +220,7 @@ qreal QDeclarativePlayVariation::maxPitch() const
 
 void QDeclarativePlayVariation::setMaxPitch(qreal maxPitch)
 {
-    if (m_complete) {
+    if (m_engine) {
         qWarning("PlayVariation: cannot change properties after initialization.");
         return;
     }
@@ -250,7 +232,7 @@ void QDeclarativePlayVariation::setMaxPitch(qreal maxPitch)
 }
 
 /*!
-    \qmlproperty real QtAudioEngine1::PlayVariation::minPitch
+    \qmlproperty real QtAudioEngine::PlayVariation::minPitch
 
     This property specifies the minimum pitch adjustment that can be applied in any playback.
 */
@@ -261,7 +243,7 @@ qreal QDeclarativePlayVariation::minPitch() const
 
 void QDeclarativePlayVariation::setMinPitch(qreal minPitch)
 {
-    if (m_complete) {
+    if (m_engine) {
         qWarning("PlayVariation: cannot change properties after initialization.");
         return;
     }

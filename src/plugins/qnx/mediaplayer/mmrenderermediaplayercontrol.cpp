@@ -1,39 +1,31 @@
 /****************************************************************************
 **
 ** Copyright (C) 2012 Research In Motion
-** Contact: http://www.qt-project.org/legal
+** Contact: http://www.qt.io/licensing/
 **
 ** This file is part of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL$
+** $QT_BEGIN_LICENSE:LGPL21$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and Digia.  For licensing terms and
-** conditions see http://qt.digia.com/licensing.  For further information
-** use the contact form at http://qt.digia.com/contact-us.
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see http://www.qt.io/terms-conditions. For further
+** information use the contact form at http://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU Lesser General Public License version 2.1 requirements
-** will be met: http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 2.1 or version 3 as published by the Free
+** Software Foundation and appearing in the file LICENSE.LGPLv21 and
+** LICENSE.LGPLv3 included in the packaging of this file. Please review the
+** following information to ensure the GNU Lesser General Public License
+** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
+** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
 **
-** In addition, as a special exception, Digia gives you certain additional
-** rights.  These rights are described in the Digia Qt LGPL Exception
+** As a special exception, The Qt Company gives you certain additional
+** rights. These rights are described in The Qt Company LGPL Exception
 ** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3.0 as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU General Public License version 3.0 requirements will be
-** met: http://www.gnu.org/copyleft/gpl.html.
-**
 **
 ** $QT_END_LICENSE$
 **
@@ -73,7 +65,7 @@ MmRendererMediaPlayerControl::MmRendererMediaPlayerControl(QObject *parent)
       m_playAfterMediaLoaded(false),
       m_inputAttached(false),
       m_stopEventsToIgnore(0),
-      m_bufferStatus(0)
+      m_bufferLevel(0)
 {
     m_loadingTimer.setSingleShot(true);
     m_loadingTimer.setInterval(0);
@@ -170,22 +162,6 @@ QByteArray MmRendererMediaPlayerControl::resourcePathForUrl(const QUrl &url)
         const QFileInfo fileInfo(relativeFilePath);
         return QFile::encodeName(QStringLiteral("file://") + fileInfo.absoluteFilePath());
 
-    // QRC, copy to temporary file, as mmrenderer does not support resource files
-    } else if (url.scheme() == QStringLiteral("qrc")) {
-        const QString qrcPath = ':' + url.path();
-        const QFileInfo resourceFileInfo(qrcPath);
-        m_tempMediaFileName = QDir::tempPath() + QStringLiteral("/qtmedia_") +
-                              QUuid::createUuid().toString() + QStringLiteral(".") +
-                              resourceFileInfo.suffix();
-        if (!QFile::copy(qrcPath, m_tempMediaFileName)) {
-            const QString errorMsg = QString("Failed to copy resource file to temporary file "
-                                             "%1 for playback").arg(m_tempMediaFileName);
-            qDebug() << errorMsg;
-            emit error(0, errorMsg);
-            return QByteArray();
-        }
-        return QFile::encodeName(m_tempMediaFileName);
-
     // HTTP or similar URL
     } else {
         return url.toEncoded();
@@ -195,7 +171,7 @@ QByteArray MmRendererMediaPlayerControl::resourcePathForUrl(const QUrl &url)
 void MmRendererMediaPlayerControl::attach()
 {
     // Should only be called in detached state
-    Q_ASSERT(m_audioId == -1 && !m_inputAttached && m_tempMediaFileName.isEmpty());
+    Q_ASSERT(m_audioId == -1 && !m_inputAttached);
 
     if (m_media.isNull() || !m_context) {
         setMediaStatus(QMediaPlayer::NoMedia);
@@ -208,7 +184,8 @@ void MmRendererMediaPlayerControl::attach()
     if (m_videoWindowControl)
         m_videoWindowControl->attachDisplay(m_context);
 
-    m_audioId = mmr_output_attach(m_context, "audio:default", "audio");
+    const QByteArray defaultAudioDevice = qgetenv("QQNX_RENDERER_DEFAULT_AUDIO_SINK");
+    m_audioId = mmr_output_attach(m_context, defaultAudioDevice.isEmpty() ? "audio:default" : defaultAudioDevice.constData(), "audio");
     if (m_audioId == -1) {
         emitMmError("mmr_output_attach() for audio failed");
         return;
@@ -234,8 +211,11 @@ void MmRendererMediaPlayerControl::attach()
 
     m_inputAttached = true;
     setMediaStatus(QMediaPlayer::LoadedMedia);
-    m_bufferStatus = 0;
-    emit bufferStatusChanged(m_bufferStatus);
+
+    // mm-renderer has buffer properties "status" and "level"
+    // QMediaPlayer's buffer status maps to mm-renderer's buffer level
+    m_bufferLevel = 0;
+    emit bufferStatusChanged(m_bufferLevel);
 }
 
 void MmRendererMediaPlayerControl::detach()
@@ -255,10 +235,6 @@ void MmRendererMediaPlayerControl::detach()
         }
     }
 
-    if (!m_tempMediaFileName.isEmpty()) {
-        QFile::remove(m_tempMediaFileName);
-        m_tempMediaFileName.clear();
-    }
     m_loadingTimer.stop();
 }
 
@@ -348,10 +324,11 @@ void MmRendererMediaPlayerControl::setState(QMediaPlayer::State state)
 {
     if (m_state != state) {
         if (m_videoRendererControl) {
-            if (state == QMediaPlayer::PausedState)
+            if (state == QMediaPlayer::PausedState || state == QMediaPlayer::StoppedState) {
                 m_videoRendererControl->pause();
-            else if ((state == QMediaPlayer::PlayingState)
-                     && (m_state == QMediaPlayer::PausedState)) {
+            } else if ((state == QMediaPlayer::PlayingState)
+                       && (m_state == QMediaPlayer::PausedState
+                           || m_state == QMediaPlayer::StoppedState)) {
                 m_videoRendererControl->resume();
             }
         }
@@ -363,6 +340,8 @@ void MmRendererMediaPlayerControl::setState(QMediaPlayer::State state)
 
 void MmRendererMediaPlayerControl::stopInternal(StopCommand stopCommand)
 {
+    setPosition(0);
+
     if (m_state != QMediaPlayer::StoppedState) {
 
         if (stopCommand == StopMmRenderer) {
@@ -371,11 +350,6 @@ void MmRendererMediaPlayerControl::stopInternal(StopCommand stopCommand)
         }
 
         setState(QMediaPlayer::StoppedState);
-    }
-
-    if (m_position != 0) {
-        m_position = 0;
-        emit positionChanged(0);
     }
 }
 
@@ -406,7 +380,9 @@ void MmRendererMediaPlayerControl::setMuted(bool muted)
 
 int MmRendererMediaPlayerControl::bufferStatus() const
 {
-    return m_bufferStatus;
+    // mm-renderer has buffer properties "status" and "level"
+    // QMediaPlayer's buffer status maps to mm-renderer's buffer level
+    return m_bufferLevel;
 }
 
 bool MmRendererMediaPlayerControl::isAudioAvailable() const
@@ -529,8 +505,11 @@ void MmRendererMediaPlayerControl::play()
         return;
     }
 
+    if (m_mediaStatus == QMediaPlayer::EndOfMedia)
+        m_position = 0;
+
     setPositionInternal(m_position);
-    setVolumeInternal(m_volume);
+    setVolumeInternal(m_muted ? 0 : m_volume);
     setPlaybackRateInternal(m_rate);
 
     if (mmr_play(m_context) != 0) {
@@ -539,6 +518,7 @@ void MmRendererMediaPlayerControl::play()
         return;
     }
 
+    m_stopEventsToIgnore = 0;    // once playing, stop events must be proccessed
     setState( QMediaPlayer::PlayingState);
 }
 
@@ -585,13 +565,23 @@ void MmRendererMediaPlayerControl::setMmPosition(qint64 newPosition)
 
 void MmRendererMediaPlayerControl::setMmBufferStatus(const QString &bufferStatus)
 {
-    const int slashPos = bufferStatus.indexOf('/');
+    if (bufferStatus == QLatin1String("buffering"))
+        setMediaStatus(QMediaPlayer::BufferingMedia);
+    else if (bufferStatus == QLatin1String("playing"))
+        setMediaStatus(QMediaPlayer::BufferedMedia);
+    // ignore "idle" buffer status
+}
+
+void MmRendererMediaPlayerControl::setMmBufferLevel(const QString &bufferLevel)
+{
+    // buffer level has format level/capacity, e.g. "91319/124402"
+    const int slashPos = bufferLevel.indexOf('/');
     if (slashPos != -1) {
-        const int fill = bufferStatus.left(slashPos).toInt();
-        const int capacity = bufferStatus.mid(slashPos + 1).toInt();
+        const int fill = bufferLevel.leftRef(slashPos).toInt();
+        const int capacity = bufferLevel.midRef(slashPos + 1).toInt();
         if (capacity != 0) {
-            m_bufferStatus = fill / static_cast<float>(capacity) * 100.0f;
-            emit bufferStatusChanged(m_bufferStatus);
+            m_bufferLevel = fill / static_cast<float>(capacity) * 100.0f;
+            emit bufferStatusChanged(m_bufferLevel);
         }
     }
 }

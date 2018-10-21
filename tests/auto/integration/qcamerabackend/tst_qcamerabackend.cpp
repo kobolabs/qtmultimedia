@@ -1,39 +1,31 @@
 /****************************************************************************
 **
-** Copyright (C) 2013 Digia Plc and/or its subsidiary(-ies).
-** Contact: http://www.qt-project.org/legal
+** Copyright (C) 2015 The Qt Company Ltd.
+** Contact: http://www.qt.io/licensing/
 **
 ** This file is part of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL$
+** $QT_BEGIN_LICENSE:LGPL21$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and Digia.  For licensing terms and
-** conditions see http://qt.digia.com/licensing.  For further information
-** use the contact form at http://qt.digia.com/contact-us.
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see http://www.qt.io/terms-conditions. For further
+** information use the contact form at http://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU Lesser General Public License version 2.1 requirements
-** will be met: http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 2.1 or version 3 as published by the Free
+** Software Foundation and appearing in the file LICENSE.LGPLv21 and
+** LICENSE.LGPLv3 included in the packaging of this file. Please review the
+** following information to ensure the GNU Lesser General Public License
+** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
+** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
 **
-** In addition, as a special exception, Digia gives you certain additional
-** rights.  These rights are described in the Digia Qt LGPL Exception
+** As a special exception, The Qt Company gives you certain additional
+** rights. These rights are described in The Qt Company LGPL Exception
 ** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3.0 as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU General Public License version 3.0 requirements will be
-** met: http://www.gnu.org/copyleft/gpl.html.
-**
 **
 ** $QT_END_LICENSE$
 **
@@ -58,6 +50,7 @@
 #include <qcameracapturedestinationcontrol.h>
 #include <qmediaservice.h>
 #include <qcamera.h>
+#include <qcamerainfo.h>
 #include <qcameraimagecapture.h>
 #include <qvideorenderercontrol.h>
 #include <private/qmediaserviceprovider_p.h>
@@ -82,7 +75,10 @@ public slots:
 private slots:
     void testAvailableDevices();
     void testDeviceDescription();
+    void testCameraInfo();
     void testCtorWithDevice();
+    void testCtorWithCameraInfo();
+    void testCtorWithPosition();
 
     void testCameraStates();
     void testCaptureMode();
@@ -126,6 +122,23 @@ void tst_QCameraBackend::testDeviceDescription()
     }
 }
 
+void tst_QCameraBackend::testCameraInfo()
+{
+    int deviceCount = QMediaServiceProvider::defaultServiceProvider()->devices(QByteArray(Q_MEDIASERVICE_CAMERA)).count();
+    QList<QCameraInfo> cameras = QCameraInfo::availableCameras();
+    QCOMPARE(cameras.count(), deviceCount);
+    if (cameras.isEmpty()) {
+        QVERIFY(QCameraInfo::defaultCamera().isNull());
+        QSKIP("Camera selection is not supported");
+    }
+
+    foreach (const QCameraInfo &info, cameras) {
+        QVERIFY(!info.deviceName().isEmpty());
+        QVERIFY(!info.description().isEmpty());
+        QVERIFY(info.orientation() % 90 == 0);
+    }
+}
+
 void tst_QCameraBackend::testCtorWithDevice()
 {
     if (QCamera::availableDevices().isEmpty())
@@ -140,6 +153,58 @@ void tst_QCameraBackend::testCtorWithDevice()
     QCOMPARE(camera->error(), QCamera::ServiceMissingError);
 
     delete camera;
+}
+
+void tst_QCameraBackend::testCtorWithCameraInfo()
+{
+    if (QCameraInfo::availableCameras().isEmpty())
+        QSKIP("Camera selection not supported");
+
+    {
+        QCameraInfo info = QCameraInfo::defaultCamera();
+        QCamera camera(info);
+        QCOMPARE(camera.error(), QCamera::NoError);
+        QCOMPARE(QCameraInfo(camera), info);
+    }
+    {
+        QCameraInfo info = QCameraInfo::availableCameras().first();
+        QCamera camera(info);
+        QCOMPARE(camera.error(), QCamera::NoError);
+        QCOMPARE(QCameraInfo(camera), info);
+    }
+    {
+        // loading an invalid CameraInfo should fail
+        QCamera *camera = new QCamera(QCameraInfo());
+        QCOMPARE(camera->error(), QCamera::ServiceMissingError);
+        QVERIFY(QCameraInfo(*camera).isNull());
+        delete camera;
+    }
+    {
+        // loading non existing camera should fail
+        QCamera camera(QCameraInfo(QUuid::createUuid().toByteArray()));
+        QCOMPARE(camera.error(), QCamera::ServiceMissingError);
+        QVERIFY(QCameraInfo(camera).isNull());
+    }
+}
+
+void tst_QCameraBackend::testCtorWithPosition()
+{
+    {
+        QCamera camera(QCamera::UnspecifiedPosition);
+        QCOMPARE(camera.error(), QCamera::NoError);
+    }
+    {
+        QCamera camera(QCamera::FrontFace);
+        // even if no camera is available at this position, it should not fail
+        // and load the default camera
+        QCOMPARE(camera.error(), QCamera::NoError);
+    }
+    {
+        QCamera camera(QCamera::BackFace);
+        // even if no camera is available at this position, it should not fail
+        // and load the default camera
+        QCOMPARE(camera.error(), QCamera::NoError);
+    }
 }
 
 void tst_QCameraBackend::testCameraStates()
@@ -283,7 +348,7 @@ void tst_QCameraBackend::testCameraCapture()
 
     QSignalSpy capturedSignal(&imageCapture, SIGNAL(imageCaptured(int,QImage)));
     QSignalSpy savedSignal(&imageCapture, SIGNAL(imageSaved(int,QString)));
-    QSignalSpy errorSignal(&imageCapture, SIGNAL(error(int, QCameraImageCapture::Error,QString)));
+    QSignalSpy errorSignal(&imageCapture, SIGNAL(error(int,QCameraImageCapture::Error,QString)));
 
     imageCapture.capture();
     QTRY_COMPARE(errorSignal.size(), 1);
@@ -354,7 +419,7 @@ void tst_QCameraBackend::testCaptureToBuffer()
     QSignalSpy capturedSignal(&imageCapture, SIGNAL(imageCaptured(int,QImage)));
     QSignalSpy imageAvailableSignal(&imageCapture, SIGNAL(imageAvailable(int,QVideoFrame)));
     QSignalSpy savedSignal(&imageCapture, SIGNAL(imageSaved(int,QString)));
-    QSignalSpy errorSignal(&imageCapture, SIGNAL(error(int, QCameraImageCapture::Error,QString)));
+    QSignalSpy errorSignal(&imageCapture, SIGNAL(error(int,QCameraImageCapture::Error,QString)));
 
     camera.start();
     QTRY_VERIFY(imageCapture.isReadyForCapture());
@@ -429,6 +494,8 @@ void tst_QCameraBackend::testCaptureToBuffer()
         imageCapture.setBufferFormat(QVideoFrame::Format_Jpeg);
         QCOMPARE(imageCapture.bufferFormat(), QVideoFrame::Format_Jpeg);
     }
+
+    QTRY_VERIFY(imageCapture.isReadyForCapture());
 
     //Try to capture to both buffer and file
 #ifdef Q_WS_MAEMO_6
@@ -586,11 +653,11 @@ void tst_QCameraBackend::testVideoRecording()
 {
     QFETCH(QByteArray, device);
 
-    QCamera *camera = device.isEmpty() ? new QCamera : new QCamera(device);
+    QScopedPointer<QCamera> camera(device.isEmpty() ? new QCamera : new QCamera(device));
 
-    QMediaRecorder recorder(camera);
+    QMediaRecorder recorder(camera.data());
 
-    QSignalSpy errorSignal(camera, SIGNAL(error(QCamera::Error)));
+    QSignalSpy errorSignal(camera.data(), SIGNAL(error(QCamera::Error)));
     QSignalSpy recorderErrorSignal(&recorder, SIGNAL(error(QMediaRecorder::Error)));
     QSignalSpy recorderStatusSignal(&recorder, SIGNAL(statusChanged(QMediaRecorder::Status)));
 
@@ -637,8 +704,6 @@ void tst_QCameraBackend::testVideoRecording()
     camera->setCaptureMode(QCamera::CaptureStillImage);
     QTRY_COMPARE(recorder.status(), QMediaRecorder::UnloadedStatus);
     QCOMPARE(recorderStatusSignal.last().first().value<QMediaRecorder::Status>(), recorder.status());
-
-    delete camera;
 }
 
 QTEST_MAIN(tst_QCameraBackend)

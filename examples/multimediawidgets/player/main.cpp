@@ -1,7 +1,7 @@
 /****************************************************************************
 **
-** Copyright (C) 2013 Digia Plc and/or its subsidiary(-ies).
-** Contact: http://www.qt-project.org/legal
+** Copyright (C) 2015 The Qt Company Ltd.
+** Contact: http://www.qt.io/licensing/
 **
 ** This file is part of the examples of the Qt Toolkit.
 **
@@ -17,8 +17,8 @@
 **     notice, this list of conditions and the following disclaimer in
 **     the documentation and/or other materials provided with the
 **     distribution.
-**   * Neither the name of Digia Plc and its Subsidiary(-ies) nor the names
-**     of its contributors may be used to endorse or promote products derived
+**   * Neither the name of The Qt Company Ltd nor the names of its
+**     contributors may be used to endorse or promote products derived
 **     from this software without specific prior written permission.
 **
 **
@@ -41,16 +41,32 @@
 #include "player.h"
 
 #include <QApplication>
+#include <QCommandLineParser>
+#include <QCommandLineOption>
+#include <QDir>
 
 int main(int argc, char *argv[])
 {
-#ifdef Q_WS_MAEMO_6
-    //Meego graphics system conflicts with xvideo during fullscreen transition
-    QApplication::setGraphicsSystem("raster");
-#endif
     QApplication app(argc, argv);
 
+    QCoreApplication::setApplicationName("Player Example");
+    QCoreApplication::setOrganizationName("QtProject");
+    QCoreApplication::setApplicationVersion(QT_VERSION_STR);
+    QCommandLineParser parser;
+    parser.setApplicationDescription("Qt MultiMedia Player Example");
+    parser.addHelpOption();
+    parser.addVersionOption();
+    parser.addPositionalArgument("url", "The URL to open.");
+    parser.process(app);
+
     Player player;
+
+    if (!parser.positionalArguments().isEmpty() && player.isPlayerAvailable()) {
+        QList<QUrl> urls;
+        foreach (const QString &a, parser.positionalArguments())
+            urls.append(QUrl::fromUserInput(a, QDir::currentPath(), QUrl::AssumeLocalFile));
+        player.addToPlaylist(urls);
+    }
 
 #if defined(Q_WS_SIMULATOR)
     player.setAttribute(Qt::WA_LockLandscapeOrientation);

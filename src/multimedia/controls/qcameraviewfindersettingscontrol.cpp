@@ -1,39 +1,31 @@
 /****************************************************************************
 **
-** Copyright (C) 2013 Digia Plc and/or its subsidiary(-ies).
-** Contact: http://www.qt-project.org/legal
+** Copyright (C) 2015 The Qt Company Ltd.
+** Contact: http://www.qt.io/licensing/
 **
 ** This file is part of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL$
+** $QT_BEGIN_LICENSE:LGPL21$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and Digia.  For licensing terms and
-** conditions see http://qt.digia.com/licensing.  For further information
-** use the contact form at http://qt.digia.com/contact-us.
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see http://www.qt.io/terms-conditions. For further
+** information use the contact form at http://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU Lesser General Public License version 2.1 requirements
-** will be met: http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 2.1 or version 3 as published by the Free
+** Software Foundation and appearing in the file LICENSE.LGPLv21 and
+** LICENSE.LGPLv3 included in the packaging of this file. Please review the
+** following information to ensure the GNU Lesser General Public License
+** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
+** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
 **
-** In addition, as a special exception, Digia gives you certain additional
-** rights.  These rights are described in the Digia Qt LGPL Exception
+** As a special exception, The Qt Company gives you certain additional
+** rights. These rights are described in The Qt Company LGPL Exception
 ** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3.0 as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU General Public License version 3.0 requirements will be
-** met: http://www.gnu.org/copyleft/gpl.html.
-**
 **
 ** $QT_END_LICENSE$
 **
@@ -58,13 +50,17 @@ QT_BEGIN_NAMESPACE
     The interface name of QCameraViewfinderSettingsControl is \c org.qt-project.qt.cameraviewfindersettingscontrol/5.0 as
     defined in QCameraViewfinderSettingsControl_iid.
 
-    \sa QMediaService::requestControl(), QCamera
+    \warning New backends should implement QCameraViewfinderSettingsControl2 instead.
+    Application developers should request this control only if QCameraViewfinderSettingsControl2
+    is not available.
+
+    \sa QMediaService::requestControl(), QCameraViewfinderSettingsControl2, QCamera
 */
 
 /*!
     \macro QCameraViewfinderSettingsControl_iid
 
-    \c org.qt-project.qt.cameraviewfinderresettingscontrol/5.0
+    \c org.qt-project.qt.cameraviewfindersettingscontrol/5.0
 
     Defines the interface name of the QCameraViewfinderSettingsControl class.
 
@@ -100,7 +96,7 @@ QCameraViewfinderSettingsControl::~QCameraViewfinderSettingsControl()
          Viewfinder pixel format, QVideoFrame::PixelFormat
   \value UserParameter
          The base value for platform specific extended parameters.
-         For such parameters the sequential values starting from UserParameter shuld be used.
+         For such parameters the sequential values starting from UserParameter should be used.
 */
 
 /*!
@@ -129,6 +125,73 @@ QCameraViewfinderSettingsControl::~QCameraViewfinderSettingsControl()
     Viewfinder parameters may also depend on other camera settings,
     especially in video capture mode. If camera configuration conflicts
     with viewfinder settings, the camara configuration is usually preferred.
+*/
+
+
+/*!
+    \class QCameraViewfinderSettingsControl2
+    \inmodule QtMultimedia
+    \ingroup multimedia_control
+    \since 5.5
+
+    \brief The QCameraViewfinderSettingsControl2 class provides access to the viewfinder settings
+    of a camera media service.
+
+    The functionality provided by this control is exposed to application code through the QCamera class.
+
+    The interface name of QCameraViewfinderSettingsControl2 is \c org.qt-project.qt.cameraviewfindersettingscontrol2/5.5 as
+    defined in QCameraViewfinderSettingsControl2_iid.
+
+    \sa QMediaService::requestControl(), QCameraViewfinderSettings, QCamera
+*/
+
+/*!
+    \macro QCameraViewfinderSettingsControl2_iid
+
+    \c org.qt-project.qt.cameraviewfindersettingscontrol2/5.5
+
+    Defines the interface name of the QCameraViewfinderSettingsControl2 class.
+
+    \relates QCameraViewfinderSettingsControl2
+*/
+
+/*!
+    Constructs a camera viewfinder settings control object with \a parent.
+*/
+QCameraViewfinderSettingsControl2::QCameraViewfinderSettingsControl2(QObject *parent)
+    : QMediaControl(*new QMediaControlPrivate, parent)
+{
+}
+
+/*!
+    Destroys the camera viewfinder settings control object.
+*/
+QCameraViewfinderSettingsControl2::~QCameraViewfinderSettingsControl2()
+{
+}
+
+/*!
+    \fn QCameraViewfinderSettingsControl2::supportedViewfinderSettings() const
+
+    Returns a list of supported camera viewfinder settings.
+
+    The list is ordered by preference; preferred settings come first.
+*/
+
+/*!
+    \fn QCameraViewfinderSettingsControl2::viewfinderSettings() const
+
+    Returns the viewfinder settings.
+
+    If undefined or unsupported values are passed to QCameraViewfinderSettingsControl2::setViewfinderSettings(),
+    this function returns the actual settings used by the camera viewfinder. These may be available
+    only once the camera is active.
+*/
+
+/*!
+    \fn QCameraViewfinderSettingsControl2::setViewfinderSettings(const QCameraViewfinderSettings &settings)
+
+    Sets the camera viewfinder \a settings.
 */
 
 #include "moc_qcameraviewfindersettingscontrol.cpp"

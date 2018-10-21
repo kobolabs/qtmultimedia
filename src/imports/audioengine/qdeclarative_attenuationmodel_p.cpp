@@ -1,45 +1,38 @@
 /****************************************************************************
 **
-** Copyright (C) 2013 Digia Plc and/or its subsidiary(-ies).
-** Contact: http://www.qt-project.org/legal
+** Copyright (C) 2015 The Qt Company Ltd.
+** Contact: http://www.qt.io/licensing/
 **
 ** This file is part of the plugins of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL$
+** $QT_BEGIN_LICENSE:LGPL21$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and Digia.  For licensing terms and
-** conditions see http://qt.digia.com/licensing.  For further information
-** use the contact form at http://qt.digia.com/contact-us.
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see http://www.qt.io/terms-conditions. For further
+** information use the contact form at http://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU Lesser General Public License version 2.1 requirements
-** will be met: http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 2.1 or version 3 as published by the Free
+** Software Foundation and appearing in the file LICENSE.LGPLv21 and
+** LICENSE.LGPLv3 included in the packaging of this file. Please review the
+** following information to ensure the GNU Lesser General Public License
+** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
+** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
 **
-** In addition, as a special exception, Digia gives you certain additional
-** rights.  These rights are described in the Digia Qt LGPL Exception
+** As a special exception, The Qt Company gives you certain additional
+** rights. These rights are described in The Qt Company LGPL Exception
 ** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3.0 as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU General Public License version 3.0 requirements will be
-** met: http://www.gnu.org/copyleft/gpl.html.
-**
 **
 ** $QT_END_LICENSE$
 **
 ****************************************************************************/
 
 #include "qdeclarative_attenuationmodel_p.h"
+#include "qdeclarative_audioengine_p.h"
 #include "qdebug.h"
 
 #define DEBUG_AUDIOENGINE
@@ -48,7 +41,7 @@ QT_USE_NAMESPACE
 
 QDeclarativeAttenuationModel::QDeclarativeAttenuationModel(QObject *parent)
     : QObject(parent)
-    , m_complete(false)
+    , m_engine(0)
 {
 }
 
@@ -56,22 +49,9 @@ QDeclarativeAttenuationModel::~QDeclarativeAttenuationModel()
 {
 }
 
-void QDeclarativeAttenuationModel::classBegin()
+void QDeclarativeAttenuationModel::setEngine(QDeclarativeAudioEngine *engine)
 {
-    if (!parent() || !parent()->inherits("QDeclarativeAudioEngine")) {
-        qWarning("AttenuationModel must be defined inside AudioEngine!");
-        //TODO: COMPILE_EXCEPTION ?
-        return;
-    }
-}
-
-void QDeclarativeAttenuationModel::componentComplete()
-{
-    if (m_name.isEmpty()) {
-        qWarning("AttenuationModel must have a name!");
-        return;
-    }
-    m_complete = true;
+    m_engine = engine;
 }
 
 QString QDeclarativeAttenuationModel::name() const
@@ -81,7 +61,7 @@ QString QDeclarativeAttenuationModel::name() const
 
 void QDeclarativeAttenuationModel::setName(const QString& name)
 {
-    if (m_complete) {
+    if (m_engine) {
         qWarning("AttenuationModel: you can not change name after initialization.");
         return;
     }
@@ -99,15 +79,11 @@ void QDeclarativeAttenuationModel::setName(const QString& name)
     \inherits Item
     \preliminary
 
-    This type is part of the \b{QtAudioEngine 1.0} module.
-
-    AttenuationModelLinear must be defined inside \l AudioEngine.
+    AttenuationModelLinear must be defined inside \l AudioEngine or be added to it using
+    \l{QtAudioEngine::AudioEngine::addAttenuationModel()}{AudioEngine.addAttenuationModel()}
+    if AttenuationModelLinear is created dynamically.
 
     \qml
-    import QtQuick 2.0
-    import QtAudioEngine 1.0
-
-
     Rectangle {
         color:"white"
         width: 300
@@ -140,7 +116,7 @@ void QDeclarativeAttenuationModel::setName(const QString& name)
 */
 
 /*!
-    \qmlproperty string QtAudioEngine1::AttenuationModelLinear::name
+    \qmlproperty string QtAudioEngine::AttenuationModelLinear::name
 
     This property holds the name of AttenuationModelLinear, must be unique among all attenuation
     models and only defined once.
@@ -152,17 +128,17 @@ QDeclarativeAttenuationModelLinear::QDeclarativeAttenuationModelLinear(QObject *
 {
 }
 
-void QDeclarativeAttenuationModelLinear::componentComplete()
+void QDeclarativeAttenuationModelLinear::setEngine(QDeclarativeAudioEngine *engine)
 {
     if (m_start > m_end) {
         qSwap(m_start, m_end);
         qWarning() << "AttenuationModelLinear[" << m_name << "]: start must be less or equal than end.";
     }
-    QDeclarativeAttenuationModel::componentComplete();
+    QDeclarativeAttenuationModel::setEngine(engine);
 }
 
 /*!
-    \qmlproperty real QtAudioEngine1::AttenuationModelLinear::start
+    \qmlproperty real QtAudioEngine::AttenuationModelLinear::start
 
     This property holds the start distance. There will be no attenuation if the distance from sound
     to listener is within this range.
@@ -175,7 +151,7 @@ qreal QDeclarativeAttenuationModelLinear::startDistance() const
 
 void QDeclarativeAttenuationModelLinear::setStartDistance(qreal startDist)
 {
-    if (m_complete) {
+    if (m_engine) {
         qWarning() << "AttenuationModelLinear[" << m_name << "]: you can not change properties after initialization.";
         return;
     }
@@ -187,7 +163,7 @@ void QDeclarativeAttenuationModelLinear::setStartDistance(qreal startDist)
 }
 
 /*!
-    \qmlproperty real QtAudioEngine1::AttenuationModelLinear::end
+    \qmlproperty real QtAudioEngine::AttenuationModelLinear::end
 
     This property holds the end distance. There will be no sound hearable if the distance from sound
     to listener is larger than this.
@@ -200,7 +176,7 @@ qreal QDeclarativeAttenuationModelLinear::endDistance() const
 
 void QDeclarativeAttenuationModelLinear::setEndDistance(qreal endDist)
 {
-    if (m_complete) {
+    if (m_engine) {
         qWarning() << "AttenuationModelLinear[" << m_name << "]: you can not change properties after initialization.";
         return;
     }
@@ -232,15 +208,11 @@ qreal QDeclarativeAttenuationModelLinear::calculateGain(const QVector3D &listene
     \inherits Item
     \preliminary
 
-    This type is part of the \b{QtAudioEngine 1.0} module.
-
-    AttenuationModelInverse must be defined inside AudioEngine.
+    AttenuationModelInverse must be defined inside \l AudioEngine or be added to it using
+    \l{QtAudioEngine::AudioEngine::addAttenuationModel()}{AudioEngine.addAttenuationModel()}
+    if AttenuationModelInverse is created dynamically.
 
     \qml
-    import QtQuick 2.0
-    import QtAudioEngine 1.0
-
-
     Rectangle {
         color:"white"
         width: 300
@@ -280,14 +252,14 @@ qreal QDeclarativeAttenuationModelLinear::calculateGain(const QVector3D &listene
 */
 
 /*!
-    \qmlproperty string QtAudioEngine1::AttenuationModelInverse::name
+    \qmlproperty string QtAudioEngine::AttenuationModelInverse::name
 
     This property holds the name of AttenuationModelInverse, must be unique among all attenuation
     models and only defined once.
 */
 
 /*!
-    \qmlproperty real QtAudioEngine1::AttenuationModelInverse::start
+    \qmlproperty real QtAudioEngine::AttenuationModelInverse::start
 
     This property holds the start distance. There will be no attenuation if the distance from sound
     to listener is within this range.
@@ -295,7 +267,7 @@ qreal QDeclarativeAttenuationModelLinear::calculateGain(const QVector3D &listene
 */
 
 /*!
-    \qmlproperty real QtAudioEngine1::AttenuationModelInverse::end
+    \qmlproperty real QtAudioEngine::AttenuationModelInverse::end
 
     This property holds the end distance. There will be no further attenuation if the distance from
     sound to listener is larger than this.
@@ -303,7 +275,7 @@ qreal QDeclarativeAttenuationModelLinear::calculateGain(const QVector3D &listene
 */
 
 /*!
-    \qmlproperty real QtAudioEngine1::AttenuationModelInverse::rolloff
+    \qmlproperty real QtAudioEngine::AttenuationModelInverse::rolloff
 
     This property holds the rolloff factor. The bigger the value is, the faster the sound attenuates.
     The default value is 1.
@@ -317,13 +289,13 @@ QDeclarativeAttenuationModelInverse::QDeclarativeAttenuationModelInverse(QObject
 {
 }
 
-void QDeclarativeAttenuationModelInverse::componentComplete()
+void QDeclarativeAttenuationModelInverse::setEngine(QDeclarativeAudioEngine *engine)
 {
     if (m_ref > m_max) {
         qSwap(m_ref, m_max);
         qWarning() << "AttenuationModelInverse[" << m_name << "]: referenceDistance must be less or equal than maxDistance.";
     }
-    QDeclarativeAttenuationModel::componentComplete();
+    QDeclarativeAttenuationModel::setEngine(engine);
 }
 
 qreal QDeclarativeAttenuationModelInverse::referenceDistance() const
@@ -333,7 +305,7 @@ qreal QDeclarativeAttenuationModelInverse::referenceDistance() const
 
 void QDeclarativeAttenuationModelInverse::setReferenceDistance(qreal referenceDistance)
 {
-    if (m_complete) {
+    if (m_engine) {
         qWarning() << "AttenuationModelInverse[" << m_name << "]: you can not change properties after initialization.";
         return;
     }
@@ -351,7 +323,7 @@ qreal QDeclarativeAttenuationModelInverse::maxDistance() const
 
 void QDeclarativeAttenuationModelInverse::setMaxDistance(qreal maxDistance)
 {
-    if (m_complete) {
+    if (m_engine) {
         qWarning() << "AttenuationModelInverse[" << m_name << "]: you can not change properties after initialization.";
         return;
     }
@@ -369,7 +341,7 @@ qreal QDeclarativeAttenuationModelInverse::rolloffFactor() const
 
 void QDeclarativeAttenuationModelInverse::setRolloffFactor(qreal rolloffFactor)
 {
-    if (m_complete) {
+    if (m_engine) {
         qWarning() << "AttenuationModelInverse[" << m_name << "]: you can not change properties after initialization.";
         return;
     }

@@ -1,9 +1,5 @@
 TARGET = qtaudio_opensles
-QT += multimedia-private
-
-PLUGIN_TYPE = audio
-PLUGIN_CLASS_NAME = QOpenSLESPlugin
-load(qt_plugin)
+QT += multimedia-private core-private
 
 LIBS += -lOpenSLES
 
@@ -23,3 +19,7 @@ SOURCES += \
 
 OTHER_FILES += \
     opensles.json
+
+PLUGIN_TYPE = audio
+PLUGIN_CLASS_NAME = QOpenSLESPlugin
+load(qt_plugin)

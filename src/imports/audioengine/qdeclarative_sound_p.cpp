@@ -1,39 +1,31 @@
 /****************************************************************************
 **
-** Copyright (C) 2013 Digia Plc and/or its subsidiary(-ies).
-** Contact: http://www.qt-project.org/legal
+** Copyright (C) 2015 The Qt Company Ltd.
+** Contact: http://www.qt.io/licensing/
 **
 ** This file is part of the plugins of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL$
+** $QT_BEGIN_LICENSE:LGPL21$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and Digia.  For licensing terms and
-** conditions see http://qt.digia.com/licensing.  For further information
-** use the contact form at http://qt.digia.com/contact-us.
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see http://www.qt.io/terms-conditions. For further
+** information use the contact form at http://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU Lesser General Public License version 2.1 requirements
-** will be met: http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 2.1 or version 3 as published by the Free
+** Software Foundation and appearing in the file LICENSE.LGPLv21 and
+** LICENSE.LGPLv3 included in the packaging of this file. Please review the
+** following information to ensure the GNU Lesser General Public License
+** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
+** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
 **
-** In addition, as a special exception, Digia gives you certain additional
-** rights.  These rights are described in the Digia Qt LGPL Exception
+** As a special exception, The Qt Company gives you certain additional
+** rights. These rights are described in The Qt Company LGPL Exception
 ** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3.0 as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU General Public License version 3.0 requirements will be
-** met: http://www.gnu.org/copyleft/gpl.html.
-**
 **
 ** $QT_END_LICENSE$
 **
@@ -72,8 +64,12 @@ qreal QDeclarativeSoundCone::innerAngle() const
 void QDeclarativeSoundCone::setInnerAngle(qreal innerAngle)
 {
     QDeclarativeSound *s = qobject_cast<QDeclarativeSound*>(parent());
-    if (s && s->m_complete)
+
+    if (s && s->m_engine) {
+        qWarning("SoundCone: innerAngle not changeable after initialization.");
         return;
+    }
+
     if (innerAngle < 0 || innerAngle > 360) {
         qWarning() << "innerAngle should be within[0, 360] degrees";
         return;
@@ -96,8 +92,12 @@ qreal QDeclarativeSoundCone::outerAngle() const
 void QDeclarativeSoundCone::setOuterAngle(qreal outerAngle)
 {
     QDeclarativeSound *s = qobject_cast<QDeclarativeSound*>(parent());
-    if (s && s->m_complete)
+
+    if (s && s->m_engine) {
+        qWarning("SoundCone: outerAngle not changeable after initialization.");
         return;
+    }
+
     if (outerAngle < 0 || outerAngle > 360) {
         qWarning() << "outerAngle should be within[0, 360] degrees";
         return;
@@ -120,8 +120,12 @@ qreal QDeclarativeSoundCone::outerGain() const
 void QDeclarativeSoundCone::setOuterGain(qreal outerGain)
 {
     QDeclarativeSound *s = qobject_cast<QDeclarativeSound*>(parent());
-    if (s && s->m_complete)
+
+    if (s && s->m_engine) {
+        qWarning("SoundCone: outerGain not changeable after initialization.");
         return;
+    }
+
     if (outerGain < 0 || outerGain > 1) {
         qWarning() << "outerGain should no less than 0 and no more than 1";
         return;
@@ -129,11 +133,18 @@ void QDeclarativeSoundCone::setOuterGain(qreal outerGain)
     m_outerGain = outerGain;
 }
 
-void QDeclarativeSoundCone::componentComplete()
+void QDeclarativeSoundCone::setEngine(QDeclarativeAudioEngine *engine)
 {
+    if (m_engine) {
+        qWarning("SoundCone: engine not changeable after initialization.");
+        return;
+    }
+
     if (m_outerAngle < m_innerAngle) {
         m_outerAngle = m_innerAngle;
     }
+
+    m_engine = engine;
 }
 
 ////////////////////////////////////////////////////////////
@@ -148,14 +159,12 @@ void QDeclarativeSoundCone::componentComplete()
     \inherits Item
     \preliminary
 
-    This type is part of the \b{QtAudioEngine 1.0} module.
-
-    Sound can be accessed through QtAudioEngine1::AudioEngine::sounds with its unique name
-    and must be defined inside AudioEngine.
+    Sound can be accessed through QtAudioEngine::AudioEngine::sounds with its unique name
+    and must be defined inside AudioEngine or be added to it using
+    \l{QtAudioEngine::AudioEngine::addSound()}{AudioEngine.addSound()}
+    if \l Sound is created dynamically.
 
     \qml
-    import QtQuick 2.0
-    import QtAudioEngine 1.0
 
     Rectangle {
         color:"white"
@@ -177,13 +186,14 @@ void QDeclarativeSoundCone::componentComplete()
 
             Sound {
                 name:"explosion"
+                playType: Sound.Random
                 PlayVariation {
                     sample:"explosion01"
                     minPitch: 0.8
                     maxPitch: 1.1
                 }
                 PlayVariation {
-                    sample:"explosion01"
+                    sample:"explosion02"
                     minGain: 1.1
                     maxGain: 1.5
                 }
@@ -201,10 +211,10 @@ void QDeclarativeSoundCone::componentComplete()
 
 QDeclarativeSound::QDeclarativeSound(QObject *parent)
     : QObject(parent)
-    , m_complete(false)
     , m_playType(Random)
     , m_attenuationModelObject(0)
     , m_categoryObject(0)
+    , m_engine(0)
 {
     m_cone = new QDeclarativeSoundCone(this);
 }
@@ -213,22 +223,8 @@ QDeclarativeSound::~QDeclarativeSound()
 {
 }
 
-void QDeclarativeSound::classBegin()
-{
-    if (!parent() || !parent()->inherits("QDeclarativeAudioEngine")) {
-        qWarning("Sound must be defined inside AudioEngine!");
-        return;
-    }
-}
-
-void QDeclarativeSound::componentComplete()
-{
-    m_complete = true;
-    m_cone->componentComplete();
-}
-
 /*!
-    \qmlproperty enumeration QtAudioEngine1::Sound::playType
+    \qmlproperty enumeration QtAudioEngine::Sound::playType
 
     This property holds the playType.  It can be one of:
 
@@ -246,15 +242,15 @@ QDeclarativeSound::PlayType QDeclarativeSound::playType() const
 
 void QDeclarativeSound::setPlayType(PlayType playType)
 {
-    if (m_complete) {
-        qWarning("Sound: playType not changable after initialization.");
+    if (m_engine) {
+        qWarning("Sound: playType not changeable after initialization.");
         return;
     }
     m_playType = playType;
 }
 
 /*!
-    \qmlproperty string QtAudioEngine1::Sound::category
+    \qmlproperty string QtAudioEngine::Sound::category
 
     This property specifies which AudioCategory this sound belongs to.
 */
@@ -265,15 +261,15 @@ QString QDeclarativeSound::category() const
 
 void QDeclarativeSound::setCategory(const QString& category)
 {
-    if (m_complete) {
-        qWarning("Sound: category not changable after initialization.");
+    if (m_engine) {
+        qWarning("Sound: category not changeable after initialization.");
         return;
     }
     m_category = category;
 }
 
 /*!
-    \qmlproperty string QtAudioEngine1::Sound::name
+    \qmlproperty string QtAudioEngine::Sound::name
 
     This property holds the name of Sound, must be unique among all sounds and only
     defined once.
@@ -285,15 +281,15 @@ QString QDeclarativeSound::name() const
 
 void QDeclarativeSound::setName(const QString& name)
 {
-    if (m_complete) {
-        qWarning("Sound: category not changable after initialization.");
+    if (m_engine) {
+        qWarning("Sound: category not changeable after initialization.");
         return;
     }
     m_name = name;
 }
 
 /*!
-    \qmlproperty string QtAudioEngine1::Sound::attenuationModel
+    \qmlproperty string QtAudioEngine::Sound::attenuationModel
 
     This property specifies which attenuation model this sound will apply.
 */
@@ -327,13 +323,28 @@ QDeclarativePlayVariation* QDeclarativeSound::getVariation(int index)
     return m_playlist[index];
 }
 
-void QDeclarativeSound::setAttenuationModel(QString attenuationModel)
+void QDeclarativeSound::setAttenuationModel(const QString &attenuationModel)
 {
-    if (m_complete) {
-        qWarning("Sound: attenuationModel not changable after initialization.");
+    if (m_engine) {
+        qWarning("Sound: attenuationModel not changeable after initialization.");
         return;
     }
     m_attenuationModel = attenuationModel;
+}
+
+void QDeclarativeSound::setEngine(QDeclarativeAudioEngine *engine)
+{
+    if (m_engine) {
+        qWarning("Sound: engine not changeable after initialization.");
+        return;
+    }
+    m_cone->setEngine(engine);
+    m_engine = engine;
+}
+
+QDeclarativeAudioEngine *QDeclarativeSound::engine() const
+{
+    return m_engine;
 }
 
 QDeclarativeSoundCone* QDeclarativeSound::cone() const
@@ -374,15 +385,46 @@ QList<QDeclarativePlayVariation*>& QDeclarativeSound::playlist()
 void QDeclarativeSound::appendFunction(QQmlListProperty<QDeclarativePlayVariation> *property, QDeclarativePlayVariation *value)
 {
     QDeclarativeSound *sound = static_cast<QDeclarativeSound*>(property->object);
-    if (sound->m_complete) {
-        qWarning("Sound: PlayVariation not addable after initialization.");
+    if (sound->m_engine) {
         return;
     }
-    sound->m_playlist.append(value);
+    sound->addPlayVariation(value);
 }
 
 /*!
-    \qmlmethod QtAudioEngine1::Sound::play()
+    \qmlmethod QtAudioEngine::Sound::addPlayVariation(PlayVariation playVariation)
+
+    Adds the given \a playVariation to sound.
+    This can be used when the PlayVariation is created dynamically:
+
+    \qml
+    import QtAudioEngine 1.1
+
+    AudioEngine {
+        id: engine
+
+        Component.onCompleted: {
+            var playVariation = Qt.createQmlObject('import QtAudioEngine 1.1; PlayVariation {}', engine);
+            playVariation.sample = "sample";
+            playVariation.minPitch = 0.8
+            playVariation.maxPitch = 1.1
+
+            var sound = Qt.createQmlObject('import QtAudioEngine 1.1; Sound {}', engine);
+            sound.name = "example";
+            sound.addPlayVariation(playVariation);
+            engine.addSound(sound);
+        }
+    }
+    \endqml
+*/
+void QDeclarativeSound::addPlayVariation(QDeclarativePlayVariation *value)
+{
+    m_playlist.append(value);
+    value->setEngine(m_engine);
+}
+
+/*!
+    \qmlmethod QtAudioEngine::Sound::play()
 
     Creates a new \l SoundInstance and starts playing.
     Position, direction and velocity are all set to \c "0,0,0".
@@ -393,7 +435,7 @@ void QDeclarativeSound::play()
 }
 
 /*!
-    \qmlmethod QtAudioEngine1::Sound::play(gain)
+    \qmlmethod QtAudioEngine::Sound::play(gain)
 
     Creates a new SoundInstance and starts playing with the adjusted \a gain.
     Position, direction and velocity are all set to \c "0,0,0".
@@ -404,7 +446,7 @@ void QDeclarativeSound::play(qreal gain)
 }
 
 /*!
-    \qmlmethod QtAudioEngine1::Sound::play(gain, pitch)
+    \qmlmethod QtAudioEngine::Sound::play(gain, pitch)
 
     Creates a new SoundInstance and starts playing with the adjusted \a gain and \a pitch.
     Position, direction and velocity are all set to \c "0,0,0".
@@ -415,7 +457,7 @@ void QDeclarativeSound::play(qreal gain, qreal pitch)
 }
 
 /*!
-    \qmlmethod QtAudioEngine1::Sound::play(position)
+    \qmlmethod QtAudioEngine::Sound::play(position)
 
     Creates a new SoundInstance and starts playing with specified \a position.
     Direction and velocity are all set to \c "0,0,0".
@@ -426,7 +468,7 @@ void QDeclarativeSound::play(const QVector3D& position)
 }
 
 /*!
-    \qmlmethod QtAudioEngine1::Sound::play(position, velocity)
+    \qmlmethod QtAudioEngine::Sound::play(position, velocity)
 
     Creates a new SoundInstance and starts playing with specified \a position and \a velocity.
     Direction is set to \c "0,0,0".
@@ -437,7 +479,7 @@ void QDeclarativeSound::play(const QVector3D& position, const QVector3D& velocit
 }
 
 /*!
-    \qmlmethod QtAudioEngine1::Sound::play(position, velocity, direction)
+    \qmlmethod QtAudioEngine::Sound::play(position, velocity, direction)
 
     Creates a new SoundInstance and starts playing with specified \a position, \a velocity and
     \a direction.
@@ -449,7 +491,7 @@ void QDeclarativeSound::play(const QVector3D& position, const QVector3D& velocit
 }
 
 /*!
-    \qmlmethod QtAudioEngine1::Sound::play(position, gain)
+    \qmlmethod QtAudioEngine::Sound::play(position, gain)
 
     Creates a new SoundInstance and starts playing with specified \a position and adjusted \a gain.
     Direction and velocity are all set to \c "0,0,0".
@@ -460,7 +502,7 @@ void QDeclarativeSound::play(const QVector3D& position, qreal gain)
 }
 
 /*!
-    \qmlmethod QtAudioEngine1::Sound::play(position, velocity, gain)
+    \qmlmethod QtAudioEngine::Sound::play(position, velocity, gain)
 
     Creates a new SoundInstance and starts playing with specified \a position, \a velocity and
     adjusted \a gain.
@@ -472,7 +514,7 @@ void QDeclarativeSound::play(const QVector3D& position, const QVector3D& velocit
 }
 
 /*!
-    \qmlmethod QtAudioEngine1::Sound::play(position, velocity, direction, gain)
+    \qmlmethod QtAudioEngine::Sound::play(position, velocity, direction, gain)
 
     Creates a new SoundInstance and starts playing with specified \a position, \a velocity,
     \a direction and adjusted \a gain.
@@ -483,7 +525,7 @@ void QDeclarativeSound::play(const QVector3D& position, const QVector3D& velocit
 }
 
 /*!
-    \qmlmethod QtAudioEngine1::Sound::play(position, gain, pitch)
+    \qmlmethod QtAudioEngine::Sound::play(position, gain, pitch)
 
     Creates a new SoundInstance and starts playing with specified \a position, adjusted \a gain and
     \a pitch.
@@ -495,7 +537,7 @@ void QDeclarativeSound::play(const QVector3D& position, qreal gain, qreal pitch)
 }
 
 /*!
-    \qmlmethod QtAudioEngine1::Sound::play(position, velocity, gain, pitch)
+    \qmlmethod QtAudioEngine::Sound::play(position, velocity, gain, pitch)
 
     Creates a new SoundInstance and starts playing with specified \a position, \a velocity,
     adjusted \a gain and \a pitch.
@@ -507,14 +549,14 @@ void QDeclarativeSound::play(const QVector3D& position, const QVector3D& velocit
 }
 
 /*!
-    \qmlmethod QtAudioEngine1::Sound::play(position, velocity, direction, gain, pitch)
+    \qmlmethod QtAudioEngine::Sound::play(position, velocity, direction, gain, pitch)
 
     Creates a new SoundInstance and starts playing with specified \a position, \a velocity,
     \a direction, adjusted \a gain and \a pitch.
 */
 void QDeclarativeSound::play(const QVector3D& position, const QVector3D& velocity, const QVector3D& direction, qreal gain, qreal pitch)
 {
-    if (!m_complete) {
+    if (!m_engine) {
         qWarning() << "AudioEngine::play not ready!";
         return;
     }
@@ -542,7 +584,7 @@ void QDeclarativeSound::play(const QVector3D& position, const QVector3D& velocit
 }
 
 /*!
-    \qmlmethod QtAudioEngine1::SoundInstance QtAudioEngine1::Sound::newInstance()
+    \qmlmethod QtAudioEngine::SoundInstance QtAudioEngine::Sound::newInstance()
 
     Returns a new \l SoundInstance.
 */
@@ -553,8 +595,13 @@ QDeclarativeSoundInstance* QDeclarativeSound::newInstance()
 
 QDeclarativeSoundInstance* QDeclarativeSound::newInstance(bool managed)
 {
+    if (!m_engine) {
+        qWarning("engine attrbiute must be set for Sound object!");
+        return NULL;
+    }
+
     QDeclarativeSoundInstance *instance =
-            qobject_cast<QDeclarativeAudioEngine*>(this->parent())->newDeclarativeSoundInstance(managed);
+            m_engine->newDeclarativeSoundInstance(managed);
     instance->setSound(m_name);
     return instance;
 }

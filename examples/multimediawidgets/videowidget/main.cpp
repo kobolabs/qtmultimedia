@@ -1,7 +1,7 @@
 /****************************************************************************
 **
-** Copyright (C) 2013 Digia Plc and/or its subsidiary(-ies).
-** Contact: http://www.qt-project.org/legal
+** Copyright (C) 2015 The Qt Company Ltd.
+** Contact: http://www.qt.io/licensing/
 **
 ** This file is part of the examples of the Qt Toolkit.
 **
@@ -17,8 +17,8 @@
 **     notice, this list of conditions and the following disclaimer in
 **     the documentation and/or other materials provided with the
 **     distribution.
-**   * Neither the name of Digia Plc and its Subsidiary(-ies) nor the names
-**     of its contributors may be used to endorse or promote products derived
+**   * Neither the name of The Qt Company Ltd nor the names of its
+**     contributors may be used to endorse or promote products derived
 **     from this software without specific prior written permission.
 **
 **
@@ -41,13 +41,36 @@
 #include "videoplayer.h"
 
 #include <QtWidgets/QApplication>
+#include <QtWidgets/QDesktopWidget>
+#include <QtCore/QCommandLineParser>
+#include <QtCore/QCommandLineOption>
+#include <QtCore/QDir>
 
 int main(int argc, char *argv[])
 {
     QApplication app(argc, argv);
 
+    QCoreApplication::setApplicationName("Video Widget Example");
+    QCoreApplication::setOrganizationName("QtProject");
+    QGuiApplication::setApplicationDisplayName(QCoreApplication::applicationName());
+    QCoreApplication::setApplicationVersion(QT_VERSION_STR);
+    QCommandLineParser parser;
+    parser.setApplicationDescription("Qt Video Widget Example");
+    parser.addHelpOption();
+    parser.addVersionOption();
+    parser.addPositionalArgument("url", "The URL to open.");
+    parser.process(app);
+
     VideoPlayer player;
-    player.resize(320, 240);
+    if (!parser.positionalArguments().isEmpty()) {
+        const QUrl url =
+            QUrl::fromUserInput(parser.positionalArguments().constFirst(),
+                                QDir::currentPath(), QUrl::AssumeLocalFile);
+        player.setUrl(url);
+    }
+
+    const QRect availableGeometry = QApplication::desktop()->availableGeometry(&player);
+    player.resize(availableGeometry.width() / 6, availableGeometry.height() / 4);
     player.show();
 
     return app.exec();

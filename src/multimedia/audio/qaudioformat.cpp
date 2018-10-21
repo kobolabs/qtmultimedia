@@ -1,39 +1,31 @@
 /****************************************************************************
 **
-** Copyright (C) 2013 Digia Plc and/or its subsidiary(-ies).
-** Contact: http://www.qt-project.org/legal
+** Copyright (C) 2015 The Qt Company Ltd.
+** Contact: http://www.qt.io/licensing/
 **
 ** This file is part of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL$
+** $QT_BEGIN_LICENSE:LGPL21$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and Digia.  For licensing terms and
-** conditions see http://qt.digia.com/licensing.  For further information
-** use the contact form at http://qt.digia.com/contact-us.
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see http://www.qt.io/terms-conditions. For further
+** information use the contact form at http://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU Lesser General Public License version 2.1 requirements
-** will be met: http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 2.1 or version 3 as published by the Free
+** Software Foundation and appearing in the file LICENSE.LGPLv21 and
+** LICENSE.LGPLv3 included in the packaging of this file. Please review the
+** following information to ensure the GNU Lesser General Public License
+** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
+** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
 **
-** In addition, as a special exception, Digia gives you certain additional
-** rights.  These rights are described in the Digia Qt LGPL Exception
+** As a special exception, The Qt Company gives you certain additional
+** rights. These rights are described in The Qt Company LGPL Exception
 ** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3.0 as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU General Public License version 3.0 requirements will be
-** met: http://www.gnu.org/copyleft/gpl.html.
-**
 **
 ** $QT_END_LICENSE$
 **
@@ -44,20 +36,14 @@
 
 QT_BEGIN_NAMESPACE
 
-namespace
+static void qRegisterAudioFormatMetaTypes()
 {
-    class QAudioFormatPrivateRegisterMetaTypes
-    {
-    public:
-        QAudioFormatPrivateRegisterMetaTypes()
-        {
-            qRegisterMetaType<QAudioFormat>();
-            qRegisterMetaType<QAudioFormat::SampleType>();
-            qRegisterMetaType<QAudioFormat::Endian>();
-        }
-    } _registerMetaTypes;
+    qRegisterMetaType<QAudioFormat>();
+    qRegisterMetaType<QAudioFormat::SampleType>();
+    qRegisterMetaType<QAudioFormat::Endian>();
 }
 
+Q_CONSTRUCTOR_FUNCTION(qRegisterAudioFormatMetaTypes)
 
 class QAudioFormatPrivate : public QSharedData
 {
@@ -473,49 +459,50 @@ int QAudioFormat::bytesPerFrame() const
 #ifndef QT_NO_DEBUG_STREAM
 QDebug operator<<(QDebug dbg, QAudioFormat::Endian endian)
 {
-    QDebug nospace = dbg.nospace();
+    QDebugStateSaver saver(dbg);
+    dbg.nospace();
     switch (endian) {
         case QAudioFormat::BigEndian:
-            nospace << "BigEndian";
+            dbg << "BigEndian";
             break;
         case QAudioFormat::LittleEndian:
-            nospace << "LittleEndian";
+            dbg << "LittleEndian";
             break;
     }
-    return nospace;
+    return dbg;
 }
 
 QDebug operator<<(QDebug dbg, QAudioFormat::SampleType type)
 {
-    QDebug nospace = dbg.nospace();
+    QDebugStateSaver saver(dbg);
+    dbg.nospace();
     switch (type) {
         case QAudioFormat::SignedInt:
-            nospace << "SignedInt";
+            dbg << "SignedInt";
             break;
         case QAudioFormat::UnSignedInt:
-            nospace << "UnSignedInt";
+            dbg << "UnSignedInt";
             break;
         case QAudioFormat::Float:
-            nospace << "Float";
+            dbg << "Float";
             break;
        default:
-            nospace << "Unknown";
+            dbg << "Unknown";
             break;
     }
-    return nospace;
+    return dbg;
 }
 
 QDebug operator<<(QDebug dbg, const QAudioFormat &f)
 {
-    dbg.nospace() << "QAudioFormat(" << f.sampleRate();
-    dbg.nospace() << "Hz, " << f.sampleSize();
-    dbg.nospace() << "bit, channelCount=" << f.channelCount();
-    dbg.nospace() << ", sampleType=" << f.sampleType();
-    dbg.nospace() << ", byteOrder=" << f.byteOrder();
-    dbg.nospace() << ", codec=" << f.codec();
-    dbg.nospace() << ")";
+    QDebugStateSaver saver(dbg);
+    dbg.nospace();
+    dbg << "QAudioFormat(" << f.sampleRate() << "Hz, "
+        << f.sampleSize() << "bit, channelCount=" << f.channelCount()
+        << ", sampleType=" << f.sampleType() << ", byteOrder=" << f.byteOrder()
+        << ", codec=" << f.codec() << ')';
 
-    return dbg.space();
+    return dbg;
 }
 #endif
 

@@ -1,39 +1,31 @@
 /****************************************************************************
 **
-** Copyright (C) 2013 Digia Plc and/or its subsidiary(-ies).
-** Contact: http://www.qt-project.org/legal
+** Copyright (C) 2015 The Qt Company Ltd.
+** Contact: http://www.qt.io/licensing/
 **
 ** This file is part of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL$
+** $QT_BEGIN_LICENSE:LGPL21$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and Digia.  For licensing terms and
-** conditions see http://qt.digia.com/licensing.  For further information
-** use the contact form at http://qt.digia.com/contact-us.
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see http://www.qt.io/terms-conditions. For further
+** information use the contact form at http://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU Lesser General Public License version 2.1 requirements
-** will be met: http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 2.1 or version 3 as published by the Free
+** Software Foundation and appearing in the file LICENSE.LGPLv21 and
+** LICENSE.LGPLv3 included in the packaging of this file. Please review the
+** following information to ensure the GNU Lesser General Public License
+** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
+** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
 **
-** In addition, as a special exception, Digia gives you certain additional
-** rights.  These rights are described in the Digia Qt LGPL Exception
+** As a special exception, The Qt Company gives you certain additional
+** rights. These rights are described in The Qt Company LGPL Exception
 ** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3.0 as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU General Public License version 3.0 requirements will be
-** met: http://www.gnu.org/copyleft/gpl.html.
-**
 **
 ** $QT_END_LICENSE$
 **
@@ -57,6 +49,7 @@
 #include <qcameracapturedestinationcontrol.h>
 #include <qmediaservice.h>
 #include <qcamera.h>
+#include <qcamerainfo.h>
 #include <qcameraimagecapture.h>
 #include <qvideorenderercontrol.h>
 
@@ -95,13 +88,23 @@ private slots:
     void testCameraCapture();
     void testCameraCaptureMetadata();
     void testImageSettings();
+    void testViewfinderSettings();
+    void testViewfinderSettingsChange();
+    void testSupportedViewfinderSettings_data();
+    void testSupportedViewfinderSettings();
+    void testSupportedViewfinderResolutions_data();
+    void testSupportedViewfinderResolutions();
+    void testSupportedViewfinderFrameRateRanges_data();
+    void testSupportedViewfinderFrameRateRanges();
+    void testSupportedViewfinderPixelFormats_data();
+    void testSupportedViewfinderPixelFormats();
     void testCameraLock();
     void testCameraLockCancel();
     void testCameraEncodingProperyChange();
     void testCaptureDestination();
     void testCaptureFormat();
 
-    void testConstructorWithDefaultProvider();
+    void testConstructor();
     void testCaptureMode();
     void testIsCaptureModeSupported();
     void testRequestedLocks();
@@ -168,8 +171,11 @@ private:
     MockMediaServiceProvider *provider;
 };
 
+Q_DECLARE_METATYPE(QCamera::FrameRateRange)
+
 void tst_QCamera::initTestCase()
 {
+    qRegisterMetaType<QCamera::FrameRateRange>("FrameRateRange");
 }
 
 void tst_QCamera::init()
@@ -274,7 +280,7 @@ void tst_QCamera::testSimpleCameraExposure()
     cameraExposure->setAutoShutterSpeed();
     QVERIFY(cameraExposure->shutterSpeed() < 0);
     cameraExposure->setManualShutterSpeed(1/128.0);
-    QVERIFY(cameraExposure->shutterSpeed() < 0);   
+    QVERIFY(cameraExposure->shutterSpeed() < 0);
 }
 
 void tst_QCamera::testSimpleCameraFocus()
@@ -292,7 +298,7 @@ void tst_QCamera::testSimpleCameraFocus()
     QCOMPARE(cameraFocus->focusMode(), QCameraFocus::AutoFocus);
     QTest::ignoreMessage(QtWarningMsg, "Focus mode selection is not supported");
     cameraFocus->setFocusMode(QCameraFocus::ContinuousFocus);
-    QCOMPARE(cameraFocus->focusMode(), QCameraFocus::AutoFocus);    
+    QCOMPARE(cameraFocus->focusMode(), QCameraFocus::AutoFocus);
 
     QCOMPARE(cameraFocus->maximumOpticalZoom(), 1.0);
     QCOMPARE(cameraFocus->maximumDigitalZoom(), 1.0);
@@ -330,7 +336,7 @@ void tst_QCamera::testSimpleCameraCapture()
     QCOMPARE(imageCapture.error(), QCameraImageCapture::NoError);
     QVERIFY(imageCapture.errorString().isEmpty());
 
-    QSignalSpy errorSignal(&imageCapture, SIGNAL(error(int, QCameraImageCapture::Error,QString)));
+    QSignalSpy errorSignal(&imageCapture, SIGNAL(error(int,QCameraImageCapture::Error,QString)));
     imageCapture.capture(QString::fromLatin1("/dev/null"));
     QCOMPARE(errorSignal.size(), 1);
     QCOMPARE(imageCapture.error(), QCameraImageCapture::NotSupportedFeatureError);
@@ -348,16 +354,16 @@ void tst_QCamera::testSimpleCameraLock()
 
     QSignalSpy lockedSignal(&camera, SIGNAL(locked()));
     QSignalSpy lockFailedSignal(&camera, SIGNAL(lockFailed()));
-    QSignalSpy lockStatusChangedSignal(&camera, SIGNAL(lockStatusChanged(QCamera::LockStatus, QCamera::LockChangeReason)));
+    QSignalSpy lockStatusChangedSignal(&camera, SIGNAL(lockStatusChanged(QCamera::LockStatus,QCamera::LockChangeReason)));
 
     camera.searchAndLock();
-    QCOMPARE(camera.lockStatus(), QCamera::Locked);
-    QCOMPARE(camera.lockStatus(QCamera::LockExposure), QCamera::Locked);
-    QCOMPARE(camera.lockStatus(QCamera::LockFocus), QCamera::Locked);
-    QCOMPARE(camera.lockStatus(QCamera::LockWhiteBalance), QCamera::Locked);
-    QCOMPARE(lockedSignal.count(), 1);
+    QCOMPARE(camera.lockStatus(), QCamera::Unlocked);
+    QCOMPARE(camera.lockStatus(QCamera::LockExposure), QCamera::Unlocked);
+    QCOMPARE(camera.lockStatus(QCamera::LockFocus), QCamera::Unlocked);
+    QCOMPARE(camera.lockStatus(QCamera::LockWhiteBalance), QCamera::Unlocked);
+    QCOMPARE(lockedSignal.count(), 0);
     QCOMPARE(lockFailedSignal.count(), 0);
-    QCOMPARE(lockStatusChangedSignal.count(), 1);
+    QCOMPARE(lockStatusChangedSignal.count(), 0);
 
     lockedSignal.clear();
     lockFailedSignal.clear();
@@ -371,7 +377,7 @@ void tst_QCamera::testSimpleCameraLock()
 
     QCOMPARE(lockedSignal.count(), 0);
     QCOMPARE(lockFailedSignal.count(), 0);
-    QCOMPARE(lockStatusChangedSignal.count(), 1);
+    QCOMPARE(lockStatusChangedSignal.count(), 0);
 }
 
 void tst_QCamera::testSimpleCaptureDestination()
@@ -459,8 +465,8 @@ void tst_QCamera::testCameraCapture()
 
     QVERIFY(!imageCapture.isReadyForCapture());
 
-    QSignalSpy capturedSignal(&imageCapture, SIGNAL(imageCaptured(int,QImage)));    
-    QSignalSpy errorSignal(&imageCapture, SIGNAL(error(int, QCameraImageCapture::Error,QString)));
+    QSignalSpy capturedSignal(&imageCapture, SIGNAL(imageCaptured(int,QImage)));
+    QSignalSpy errorSignal(&imageCapture, SIGNAL(error(int,QCameraImageCapture::Error,QString)));
 
     imageCapture.capture(QString::fromLatin1("/dev/null"));
     QCOMPARE(capturedSignal.size(), 0);
@@ -504,7 +510,8 @@ void tst_QCamera::testCameraCaptureMetadata()
     QCOMPARE(metadata[0].toInt(), id);
     QCOMPARE(metadata[1].toString(), QMediaMetaData::DateTimeOriginal);
     QDateTime captureTime = metadata[2].value<QVariant>().value<QDateTime>();
-    QVERIFY(qAbs(captureTime.secsTo(QDateTime::currentDateTime()) < 5)); //it should not takes more than 5 seconds for signal to arrive here
+    const qint64 dt = captureTime.secsTo(QDateTime::currentDateTime());
+    QVERIFY2(qAbs(dt) < 5, QByteArray::number(dt).constData()); // it should not take more than 5 seconds for signal to arrive here
 
     metadata = metadataSignal[2];
     QCOMPARE(metadata[0].toInt(), id);
@@ -880,6 +887,572 @@ void tst_QCamera::testImageSettings()
     QVERIFY(settings1 != settings2);
 }
 
+void tst_QCamera::testViewfinderSettings()
+{
+    QCameraViewfinderSettings settings;
+    QVERIFY(settings.isNull());
+    QVERIFY(settings == QCameraViewfinderSettings());
+
+    QCOMPARE(settings.resolution(), QSize());
+    settings.setResolution(QSize(640, 480));
+    QCOMPARE(settings.resolution(), QSize(640, 480));
+    settings.setResolution(1280, 720);
+    QCOMPARE(settings.resolution(), QSize(1280, 720));
+    QVERIFY(!settings.isNull());
+    QVERIFY(settings != QCameraViewfinderSettings());
+
+    settings = QCameraViewfinderSettings();
+    QVERIFY(qFuzzyIsNull(settings.minimumFrameRate()));
+    settings.setMinimumFrameRate(10.0);
+    QVERIFY(qFuzzyCompare(settings.minimumFrameRate(), 10.0));
+    QVERIFY(qFuzzyIsNull(settings.maximumFrameRate()));
+    settings.setMaximumFrameRate(20.0);
+    QVERIFY(qFuzzyCompare(settings.maximumFrameRate(), 20.0));
+    QVERIFY(!settings.isNull());
+
+    settings = QCameraViewfinderSettings();
+    QCOMPARE(settings.pixelFormat(), QVideoFrame::Format_Invalid);
+    settings.setPixelFormat(QVideoFrame::Format_RGB32);
+    QCOMPARE(settings.pixelFormat(), QVideoFrame::Format_RGB32);
+    QVERIFY(!settings.isNull());
+
+    settings = QCameraViewfinderSettings();
+    QCOMPARE(settings.pixelAspectRatio(), QSize());
+    settings.setPixelAspectRatio(QSize(2, 1));
+    QCOMPARE(settings.pixelAspectRatio(), QSize(2, 1));
+    settings.setPixelAspectRatio(3, 2);
+    QCOMPARE(settings.pixelAspectRatio(), QSize(3, 2));
+    QVERIFY(!settings.isNull());
+
+    settings = QCameraViewfinderSettings();
+
+    {
+        QCameraViewfinderSettings settings1;
+        QCameraViewfinderSettings settings2;
+        QCOMPARE(settings2, settings1);
+
+        settings2 = settings1;
+        QCOMPARE(settings2, settings1);
+        QVERIFY(settings2.isNull());
+
+        settings1.setResolution(800, 600);
+
+        QVERIFY(settings2.isNull());
+        QVERIFY(!settings1.isNull());
+        QVERIFY(settings1 != settings2);
+    }
+
+    {
+        QCameraViewfinderSettings settings1;
+        QCameraViewfinderSettings settings2(settings1);
+        QCOMPARE(settings2, settings1);
+
+        settings2 = settings1;
+        QCOMPARE(settings2, settings1);
+        QVERIFY(settings2.isNull());
+
+        settings1.setResolution(800, 600);
+
+        QVERIFY(settings2.isNull());
+        QVERIFY(!settings1.isNull());
+        QVERIFY(settings1 != settings2);
+    }
+
+    QCameraViewfinderSettings settings1;
+    QCameraViewfinderSettings settings2;
+
+    settings1 = QCameraViewfinderSettings();
+    settings1.setResolution(800,600);
+    settings2 = QCameraViewfinderSettings();
+    settings2.setResolution(QSize(800,600));
+    QVERIFY(settings1 == settings2);
+    settings2.setResolution(QSize(400,300));
+    QVERIFY(settings1 != settings2);
+
+    settings1 = QCameraViewfinderSettings();
+    settings1.setMinimumFrameRate(10.0);
+    settings2 = QCameraViewfinderSettings();
+    settings2.setMinimumFrameRate(10.0);
+    QVERIFY(settings1 == settings2);
+    settings2.setMinimumFrameRate(15.0);
+    QVERIFY(settings1 != settings2);
+
+    settings1 = QCameraViewfinderSettings();
+    settings1.setMaximumFrameRate(30.0);
+    settings2 = QCameraViewfinderSettings();
+    settings2.setMaximumFrameRate(30.0);
+    QVERIFY(settings1 == settings2);
+    settings2.setMaximumFrameRate(15.0);
+    QVERIFY(settings1 != settings2);
+
+    settings1 = QCameraViewfinderSettings();
+    settings1.setPixelFormat(QVideoFrame::Format_YV12);
+    settings2 = QCameraViewfinderSettings();
+    settings2.setPixelFormat(QVideoFrame::Format_YV12);
+    QVERIFY(settings1 == settings2);
+    settings2.setPixelFormat(QVideoFrame::Format_NV21);
+    QVERIFY(settings1 != settings2);
+
+    settings1 = QCameraViewfinderSettings();
+    settings1.setPixelAspectRatio(2,1);
+    settings2 = QCameraViewfinderSettings();
+    settings2.setPixelAspectRatio(QSize(2,1));
+    QVERIFY(settings1 == settings2);
+    settings2.setPixelAspectRatio(QSize(1,2));
+    QVERIFY(settings1 != settings2);
+}
+
+void tst_QCamera::testViewfinderSettingsChange()
+{
+    QCamera camera;
+
+    QSignalSpy stateChangedSignal(&camera, SIGNAL(stateChanged(QCamera::State)));
+    QSignalSpy statusChangedSignal(&camera, SIGNAL(statusChanged(QCamera::Status)));
+
+    camera.start();
+    QCOMPARE(camera.state(), QCamera::ActiveState);
+    QCOMPARE(camera.status(), QCamera::ActiveStatus);
+
+    QCOMPARE(stateChangedSignal.count(), 1);
+    QCOMPARE(statusChangedSignal.count(), 1);
+    stateChangedSignal.clear();
+    statusChangedSignal.clear();
+
+    //the settings change should trigger camera stop/start
+    camera.setViewfinderSettings(QCameraViewfinderSettings());
+    QCOMPARE(camera.state(), QCamera::ActiveState);
+    QCOMPARE(camera.status(), QCamera::LoadedStatus);
+
+    QCOMPARE(stateChangedSignal.count(), 0);
+    QCOMPARE(statusChangedSignal.count(), 1);
+    stateChangedSignal.clear();
+    statusChangedSignal.clear();
+
+    QCOMPARE(camera.state(), QCamera::ActiveState);
+    QTRY_COMPARE(camera.status(), QCamera::ActiveStatus);
+
+    QCOMPARE(stateChangedSignal.count(), 0);
+    QCOMPARE(statusChangedSignal.count(), 1);
+    stateChangedSignal.clear();
+    statusChangedSignal.clear();
+
+    //the settings change should trigger camera stop/start only once
+    camera.setViewfinderSettings(QCameraViewfinderSettings());
+    camera.setViewfinderSettings(QCameraViewfinderSettings());
+
+    QCOMPARE(camera.state(), QCamera::ActiveState);
+    QCOMPARE(camera.status(), QCamera::LoadedStatus);
+
+    QCOMPARE(stateChangedSignal.count(), 0);
+    QCOMPARE(statusChangedSignal.count(), 1);
+    stateChangedSignal.clear();
+    statusChangedSignal.clear();
+
+    QCOMPARE(camera.state(), QCamera::ActiveState);
+    QTRY_COMPARE(camera.status(), QCamera::ActiveStatus);
+
+    QCOMPARE(stateChangedSignal.count(), 0);
+    QCOMPARE(statusChangedSignal.count(), 1);
+}
+
+class ViewfinderSettingsBuilder
+{
+public:
+    ViewfinderSettingsBuilder &setResolution(int width, int height) {
+        m_settings.setResolution(width, height);
+        return *this;
+    }
+
+    ViewfinderSettingsBuilder &setMinimumFrameRate(qreal r) {
+        m_settings.setMinimumFrameRate(r);
+        return *this;
+    }
+
+    ViewfinderSettingsBuilder &setMaximumFrameRate(qreal r) {
+        m_settings.setMaximumFrameRate(r);
+        return *this;
+    }
+
+    ViewfinderSettingsBuilder &setPixelFormat(QVideoFrame::PixelFormat f) {
+        m_settings.setPixelFormat(f);
+        return *this;
+    }
+
+    ViewfinderSettingsBuilder &setPixelAspectRatio(int h, int v) {
+        m_settings.setPixelAspectRatio(h, v);
+        return *this;
+    }
+
+    QCameraViewfinderSettings build() {
+        QCameraViewfinderSettings s = m_settings;
+        m_settings = QCameraViewfinderSettings();
+        return s;
+    }
+
+private:
+    QCameraViewfinderSettings m_settings;
+};
+
+void tst_QCamera::testSupportedViewfinderSettings_data()
+{
+    // see mockcameraviewfindersettingscontrol.h for expected values
+
+    ViewfinderSettingsBuilder builder;
+
+    QTest::addColumn<QCameraViewfinderSettings>("settings");
+    QTest::addColumn< QList<int> >("expectedSupportedSettings");
+
+    QTest::newRow("all supported settings") << QCameraViewfinderSettings()
+                                            << (QList<int>() << 0 << 1 << 2 << 3 << 4 << 5);
+
+    QTest::newRow("invalid resolution") << builder.setResolution(452472, 44453).build()
+                                        << QList<int>();
+
+    QTest::newRow("resolution (1)") << builder.setResolution(640, 480).build()
+                                    << (QList<int>() << 0);
+
+    QTest::newRow("resolution (2)") << builder.setResolution(1280, 720).build()
+                                    << (QList<int>() << 1 << 3 << 4);
+
+    QTest::newRow("invalid minimum frame rate") << builder.setMinimumFrameRate(2).build()
+                                                << QList<int>();
+
+    QTest::newRow("minimum frame rate (1)") << builder.setMinimumFrameRate(5).build()
+                                            << (QList<int>() << 2);
+
+    QTest::newRow("minimum frame rate (2)") << builder.setMinimumFrameRate(10).build()
+                                            << (QList<int>() << 1 << 3);
+
+    QTest::newRow("minimum frame rate (3)") << builder.setMinimumFrameRate(30).build()
+                                            << (QList<int>() << 0 << 4 << 5);
+
+    QTest::newRow("invalid maximum frame rate") << builder.setMaximumFrameRate(2).build()
+                                                << QList<int>();
+
+    QTest::newRow("maximum frame rate (1)") << builder.setMaximumFrameRate(10).build()
+                                            << (QList<int>() << 1 << 2 << 3);
+
+    QTest::newRow("maximum frame rate (2)") << builder.setMaximumFrameRate(30).build()
+                                            << (QList<int>() << 0 << 4 << 5);
+
+    QTest::newRow("invalid pixel format") << builder.setPixelFormat(QVideoFrame::Format_CameraRaw).build()
+                                          << QList<int>();
+
+    QTest::newRow("pixel format (1)") << builder.setPixelFormat(QVideoFrame::Format_BGR32).build()
+                                      << (QList<int>() << 2);
+
+    QTest::newRow("pixel format (2)") << builder.setPixelFormat(QVideoFrame::Format_YV12).build()
+                                      << (QList<int>() << 3 << 4);
+
+    QTest::newRow("pixel format (3)") << builder.setPixelFormat(QVideoFrame::Format_NV12).build()
+                                      << (QList<int>() << 0 << 1 << 5);
+
+    QTest::newRow("invalid pixel aspect ratio") << builder.setPixelAspectRatio(5, 3).build()
+                                                << QList<int>();
+
+    QTest::newRow("pixel aspect ratio (1)") << builder.setPixelAspectRatio(2, 1).build()
+                                            << (QList<int>() << 2);
+
+    QTest::newRow("pixel aspect ratio (2)") << builder.setPixelAspectRatio(1, 1).build()
+                                            << (QList<int>() << 0 << 1 << 3 << 4 << 5);
+
+    QTest::newRow("invalid multi settings") << builder.setResolution(640, 480)
+                                                      .setMinimumFrameRate(10)
+                                                      .setMaximumFrameRate(10)
+                                                      .build()
+                                            << QList<int>();
+
+    QTest::newRow("multi settings (1)") << builder.setResolution(640, 480)
+                                                  .setMinimumFrameRate(30)
+                                                  .setMaximumFrameRate(30)
+                                                  .build()
+                                        << (QList<int>() << 0);
+
+    QTest::newRow("multi settings (2)") << builder.setResolution(1280, 720)
+                                                  .setMinimumFrameRate(10)
+                                                  .setMaximumFrameRate(10)
+                                                  .build()
+                                        << (QList<int>() << 1 << 3);
+
+    QTest::newRow("multi settings (3)") << builder.setPixelFormat(QVideoFrame::Format_NV12)
+                                                  .setMinimumFrameRate(30)
+                                                  .build()
+                                        << (QList<int>() << 0 << 5);
+
+    QTest::newRow("multi settings (4)") << builder.setPixelAspectRatio(1, 1)
+                                                  .setMaximumFrameRate(10)
+                                                  .build()
+                                        << (QList<int>() << 1 << 3);
+}
+
+void tst_QCamera::testSupportedViewfinderSettings()
+{
+    QFETCH(QCameraViewfinderSettings, settings);
+    QFETCH(QList<int>, expectedSupportedSettings);
+
+    QList<QCameraViewfinderSettings> actualSupportedSettings = QCamera().supportedViewfinderSettings(settings);
+    QCOMPARE(actualSupportedSettings.size(), expectedSupportedSettings.size());
+    for (int i = 0; i < expectedSupportedSettings.size(); ++i) {
+        QCameraViewfinderSettings expectedSettings = mockCameraService->mockViewfinderSettingsControl->supportedSettings.at(expectedSupportedSettings.at(i));
+        QCOMPARE(actualSupportedSettings.at(i), expectedSettings);
+    }
+}
+
+void tst_QCamera::testSupportedViewfinderResolutions_data()
+{
+    // see mockcameraviewfindersettingscontrol.h for expected values
+
+    typedef QList<QSize> SizeList;
+    ViewfinderSettingsBuilder builder;
+
+    QTest::addColumn<QCameraViewfinderSettings>("settings");
+    QTest::addColumn<SizeList>("expectedResolutions");
+
+    QTest::newRow("empty settings") << QCameraViewfinderSettings()
+                                    << (SizeList() << QSize(320, 240)
+                                                   << QSize(640, 480)
+                                                   << QSize(1280, 720)
+                                                   << QSize(1920, 1080));
+
+    QTest::newRow("invalid minimum frame rate") << builder.setMinimumFrameRate(2).build()
+                                                << SizeList();
+
+    QTest::newRow("minimum frame rate (1)") << builder.setMinimumFrameRate(5).build()
+                                            << (SizeList() << QSize(1920, 1080));
+
+    QTest::newRow("minimum frame rate (2)") << builder.setMinimumFrameRate(10).build()
+                                            << (SizeList() << QSize(1280, 720));
+
+    QTest::newRow("minimum frame rate (3)") << builder.setMinimumFrameRate(30).build()
+                                            << (SizeList() << QSize(320, 240)
+                                                           << QSize(640, 480)
+                                                           << QSize(1280, 720));
+
+    QTest::newRow("invalid maximum frame rate") << builder.setMaximumFrameRate(2).build()
+                                                << SizeList();
+
+    QTest::newRow("maximum frame rate") << builder.setMaximumFrameRate(10).build()
+                                        << (SizeList() << QSize(1280, 720)
+                                                       << QSize(1920, 1080));
+
+    QTest::newRow("invalid pixel format") << builder.setPixelFormat(QVideoFrame::Format_CameraRaw).build()
+                                          << SizeList();
+
+    QTest::newRow("pixel format (1)") << builder.setPixelFormat(QVideoFrame::Format_BGR32).build()
+                                      << (SizeList() << QSize(1920, 1080));
+
+    QTest::newRow("pixel format (2)") << builder.setPixelFormat(QVideoFrame::Format_YV12).build()
+                                      << (SizeList() << QSize(1280, 720));
+
+    QTest::newRow("pixel format (3)") << builder.setPixelFormat(QVideoFrame::Format_NV12).build()
+                                      << (SizeList() << QSize(320, 240)
+                                                     << QSize(640, 480)
+                                                     << QSize(1280, 720));
+
+    QTest::newRow("invalid pixel aspect ratio") << builder.setPixelAspectRatio(7, 2).build()
+                                                << SizeList();
+
+    QTest::newRow("pixel aspect ratio (1") << builder.setPixelAspectRatio(2, 1).build()
+                                           << (SizeList() << QSize(1920, 1080));
+
+    QTest::newRow("pixel aspect ratio (2") << builder.setPixelAspectRatio(1, 1).build()
+                                           << (SizeList() << QSize(320, 240)
+                                                          << QSize(640, 480)
+                                                          << QSize(1280, 720));
+
+    QTest::newRow("invalid multi settings (1)") << builder.setMinimumFrameRate(2)
+                                                          .setMaximumFrameRate(3)
+                                                          .build()
+                                                << SizeList();
+
+    QTest::newRow("invalid multi settings (2)") << builder.setMinimumFrameRate(5)
+                                                          .setMaximumFrameRate(11)
+                                                          .build()
+                                                << SizeList();
+
+    QTest::newRow("multi settings (1)") << builder.setMinimumFrameRate(10)
+                                                  .setMaximumFrameRate(10)
+                                                  .build()
+                                        << (SizeList() << QSize(1280, 720));
+
+    QTest::newRow("multi settings (2)") << builder.setMinimumFrameRate(30)
+                                                  .setMaximumFrameRate(30)
+                                                  .build()
+                                        << (SizeList() << QSize(320, 240)
+                                                       << QSize(640, 480)
+                                                       << QSize(1280, 720));
+
+    QTest::newRow("multi settings (3)") << builder.setPixelFormat(QVideoFrame::Format_NV12)
+                                                  .setMinimumFrameRate(30)
+                                                  .build()
+                                        << (SizeList() << QSize(320, 240)
+                                                       << QSize(640, 480));
+
+    QTest::newRow("multi settings (4)") << builder.setPixelAspectRatio(1, 1)
+                                                  .setMaximumFrameRate(10)
+                                                  .build()
+                                        << (SizeList() << QSize(1280, 720));
+}
+
+void tst_QCamera::testSupportedViewfinderResolutions()
+{
+    QFETCH(QCameraViewfinderSettings, settings);
+    QFETCH(QList<QSize>, expectedResolutions);
+
+    QList<QSize> actualResolutions = QCamera().supportedViewfinderResolutions(settings);
+    QCOMPARE(actualResolutions.size(), expectedResolutions.size());
+    for (int i = 0; i < actualResolutions.size(); ++i)
+        QCOMPARE(actualResolutions.at(i), expectedResolutions.at(i));
+}
+
+void tst_QCamera::testSupportedViewfinderFrameRateRanges_data()
+{
+    // see mockcameraviewfindersettingscontrol.h for expected values
+
+    typedef QList<QCamera::FrameRateRange> RangeList;
+    ViewfinderSettingsBuilder builder;
+
+    QTest::addColumn<QCameraViewfinderSettings>("settings");
+    QTest::addColumn<RangeList>("expectedFrameRateRanges");
+
+    QTest::newRow("empty settings") << QCameraViewfinderSettings()
+                                    << (RangeList() << QCamera::FrameRateRange(5, 10)
+                                                    << QCamera::FrameRateRange(10, 10)
+                                                    << QCamera::FrameRateRange(30, 30));
+
+    QTest::newRow("invalid resolution") << builder.setResolution(452472, 444534).build()
+                                        << RangeList();
+
+    QTest::newRow("resolution (1)") << builder.setResolution(320, 240).build()
+                                    << (RangeList() << QCamera::FrameRateRange(30, 30));
+
+    QTest::newRow("resolution (2)") << builder.setResolution(1280, 720).build()
+                                    << (RangeList() << QCamera::FrameRateRange(10, 10)
+                                                    << QCamera::FrameRateRange(30, 30));
+
+    QTest::newRow("resolution (3)") << builder.setResolution(1920, 1080).build()
+                                    << (RangeList() << QCamera::FrameRateRange(5, 10));
+
+    QTest::newRow("invalid minimum frame rate") << builder.setMinimumFrameRate(2).build()
+                                                << RangeList();
+
+    QTest::newRow("minimum frame rate (1)") << builder.setMinimumFrameRate(5).build()
+                                            << (RangeList() << QCamera::FrameRateRange(5, 10));
+
+    QTest::newRow("minimum frame rate (2)") << builder.setMinimumFrameRate(10).build()
+                                            << (RangeList() << QCamera::FrameRateRange(10, 10));
+
+    QTest::newRow("invalid maximum frame rate") << builder.setMaximumFrameRate(2).build()
+                                                << RangeList();
+
+    QTest::newRow("maximum frame rate (1)") << builder.setMaximumFrameRate(10).build()
+                                            << (RangeList() << QCamera::FrameRateRange(5, 10)
+                                                            << QCamera::FrameRateRange(10, 10));
+
+    QTest::newRow("maximum frame rate (2)") << builder.setMaximumFrameRate(30).build()
+                                            << (RangeList() << QCamera::FrameRateRange(30, 30));
+
+    QTest::newRow("invalid pixel format") << builder.setPixelFormat(QVideoFrame::Format_IMC1).build()
+                                          << RangeList();
+
+    QTest::newRow("pixel format (1)") << builder.setPixelFormat(QVideoFrame::Format_BGR32).build()
+                                            << (RangeList() << QCamera::FrameRateRange(5, 10));
+
+    QTest::newRow("pixel format (2)") << builder.setPixelFormat(QVideoFrame::Format_NV12).build()
+                                      << (RangeList() << QCamera::FrameRateRange(10, 10)
+                                                      << QCamera::FrameRateRange(30, 30));
+
+    QTest::newRow("invalid pixel aspect ratio") << builder.setPixelAspectRatio(2, 3).build()
+                                                << RangeList();
+
+    QTest::newRow("pixel aspect ratio (1)") << builder.setPixelAspectRatio(2, 1).build()
+                                            << (RangeList() << QCamera::FrameRateRange(5, 10));
+
+    QTest::newRow("pixel aspect ratio (2)") << builder.setPixelAspectRatio(1, 1).build()
+                                            << (RangeList() << QCamera::FrameRateRange(10, 10)
+                                                            << QCamera::FrameRateRange(30, 30));
+}
+
+void tst_QCamera::testSupportedViewfinderFrameRateRanges()
+{
+    QFETCH(QCameraViewfinderSettings, settings);
+    QFETCH(QList<QCamera::FrameRateRange>, expectedFrameRateRanges);
+
+    QList<QCamera::FrameRateRange> actualFrameRateRanges = QCamera().supportedViewfinderFrameRateRanges(settings);
+    QCOMPARE(actualFrameRateRanges.size(), expectedFrameRateRanges.size());
+    for (int i = 0; i < actualFrameRateRanges.size(); ++i)
+        QCOMPARE(actualFrameRateRanges.at(i), expectedFrameRateRanges.at(i));
+}
+
+void tst_QCamera::testSupportedViewfinderPixelFormats_data()
+{
+    // see mockcameraviewfindersettingscontrol.h for expected values
+
+    typedef QList<QVideoFrame::PixelFormat> FormatList;
+    ViewfinderSettingsBuilder builder;
+
+    QTest::addColumn<QCameraViewfinderSettings>("settings");
+    QTest::addColumn<FormatList>("expectedPixelFormats");
+
+    QTest::newRow("empty settings") << QCameraViewfinderSettings()
+                                    << (FormatList() << QVideoFrame::Format_NV12
+                                                     << QVideoFrame::Format_BGR32
+                                                     << QVideoFrame::Format_YV12);
+
+    QTest::newRow("invalid resolution") << builder.setResolution(452472, 444534).build()
+                                        << FormatList();
+
+    QTest::newRow("resolution (1)") << builder.setResolution(640, 480).build()
+                                    << (FormatList() << QVideoFrame::Format_NV12);
+
+    QTest::newRow("resolution (2)") << builder.setResolution(1280, 720).build()
+                                    << (FormatList() << QVideoFrame::Format_NV12
+                                                     << QVideoFrame::Format_YV12);
+
+    QTest::newRow("invalid minimum frame rate") << builder.setMinimumFrameRate(2).build()
+                                                << FormatList();
+
+    QTest::newRow("minimum frame rate (1)") << builder.setMinimumFrameRate(5).build()
+                                            << (FormatList() << QVideoFrame::Format_BGR32);
+
+    QTest::newRow("minimum frame rate (2)") << builder.setMinimumFrameRate(10).build()
+                                            << (FormatList() << QVideoFrame::Format_NV12
+                                                             << QVideoFrame::Format_YV12);
+
+    QTest::newRow("invalid maximum frame rate") << builder.setMaximumFrameRate(2).build()
+                                                << FormatList();
+
+    QTest::newRow("maximum frame rate (1)") << builder.setMaximumFrameRate(10).build()
+                                            << (FormatList() << QVideoFrame::Format_NV12
+                                                             << QVideoFrame::Format_BGR32
+                                                             << QVideoFrame::Format_YV12);
+
+    QTest::newRow("maximum frame rate (2)") << builder.setMinimumFrameRate(30).build()
+                                            << (FormatList() << QVideoFrame::Format_NV12
+                                                             << QVideoFrame::Format_YV12);
+
+    QTest::newRow("invalid pixel aspect ratio") << builder.setPixelAspectRatio(2, 3).build()
+                                                << FormatList();
+
+    QTest::newRow("pixel aspect ratio (1)") << builder.setPixelAspectRatio(2, 1).build()
+                                            << (FormatList() << QVideoFrame::Format_BGR32);
+
+    QTest::newRow("pixel aspect ratio (2)") << builder.setPixelAspectRatio(1, 1).build()
+                                            << (FormatList() << QVideoFrame::Format_NV12
+                                                             << QVideoFrame::Format_YV12);
+}
+
+void tst_QCamera::testSupportedViewfinderPixelFormats()
+{
+    QFETCH(QCameraViewfinderSettings, settings);
+    QFETCH(QList<QVideoFrame::PixelFormat>, expectedPixelFormats);
+
+    QList<QVideoFrame::PixelFormat> actualPixelFormats = QCamera().supportedViewfinderPixelFormats(settings);
+    QCOMPARE(actualPixelFormats.size(), expectedPixelFormats.size());
+    for (int i = 0; i < actualPixelFormats.size(); ++i)
+        QCOMPARE(actualPixelFormats.at(i), expectedPixelFormats.at(i));
+}
+
 void tst_QCamera::testCameraLock()
 {
     QCamera camera;
@@ -940,7 +1513,7 @@ void tst_QCamera::testCameraLockCancel()
 
     QSignalSpy lockedSignal(&camera, SIGNAL(locked()));
     QSignalSpy lockFailedSignal(&camera, SIGNAL(lockFailed()));
-    QSignalSpy lockStatusChangedSignal(&camera, SIGNAL(lockStatusChanged(QCamera::LockStatus, QCamera::LockChangeReason)));
+    QSignalSpy lockStatusChangedSignal(&camera, SIGNAL(lockStatusChanged(QCamera::LockStatus,QCamera::LockChangeReason)));
     camera.searchAndLock();
     QCOMPARE(camera.lockStatus(), QCamera::Searching);
     QCOMPARE(lockedSignal.count(), 0);
@@ -1124,22 +1697,24 @@ void tst_QCamera::testSetVideoOutputDestruction()
 
 void tst_QCamera::testEnumDebug()
 {
-    QTest::ignoreMessage(QtDebugMsg, "QCamera::ActiveState ");
+    QTest::ignoreMessage(QtDebugMsg, "QCamera::ActiveState");
     qDebug() << QCamera::ActiveState;
-    QTest::ignoreMessage(QtDebugMsg, "QCamera::ActiveStatus ");
+    QTest::ignoreMessage(QtDebugMsg, "QCamera::ActiveStatus");
     qDebug() << QCamera::ActiveStatus;
-    QTest::ignoreMessage(QtDebugMsg, "QCamera::CaptureVideo ");
+    QTest::ignoreMessage(QtDebugMsg, "QCamera::CaptureVideo");
     qDebug() << QCamera::CaptureVideo;
-    QTest::ignoreMessage(QtDebugMsg, "QCamera::CameraError ");
+    QTest::ignoreMessage(QtDebugMsg, "QCamera::CameraError");
     qDebug() << QCamera::CameraError;
-    QTest::ignoreMessage(QtDebugMsg, "QCamera::Unlocked ");
+    QTest::ignoreMessage(QtDebugMsg, "QCamera::Unlocked");
     qDebug() << QCamera::Unlocked;
-    QTest::ignoreMessage(QtDebugMsg, "QCamera::LockAcquired ");
+    QTest::ignoreMessage(QtDebugMsg, "QCamera::LockAcquired");
     qDebug() << QCamera::LockAcquired;
-    QTest::ignoreMessage(QtDebugMsg, "QCamera::NoLock ");
+    QTest::ignoreMessage(QtDebugMsg, "QCamera::NoLock");
     qDebug() << QCamera::NoLock;
-    QTest::ignoreMessage(QtDebugMsg, "QCamera::LockExposure ");
+    QTest::ignoreMessage(QtDebugMsg, "QCamera::LockExposure");
     qDebug() << QCamera::LockExposure;
+    QTest::ignoreMessage(QtDebugMsg, "QCamera::FrontFace ");
+    qDebug() << QCamera::FrontFace;
 }
 
 void tst_QCamera::testCameraControl()
@@ -1148,13 +1723,75 @@ void tst_QCamera::testCameraControl()
     QVERIFY(m_cameraControl != NULL);
 }
 
-/* Test case for constructor with default provider */
-void tst_QCamera::testConstructorWithDefaultProvider()
+void tst_QCamera::testConstructor()
 {
-    QCamera *camera = new QCamera(0);
-    QVERIFY(camera != NULL);
-    QCOMPARE(camera->state(), QCamera::UnloadedState);
-    delete camera;
+    // Service doesn't implement QVideoDeviceSelectorControl
+    provider->service = mockSimpleCameraService;
+
+    {
+        QCamera camera;
+        QCOMPARE(camera.availability(), QMultimedia::Available);
+        QCOMPARE(camera.error(), QCamera::NoError);
+    }
+
+    {
+        // Requesting a camera at a specific position from a service which doesn't implement
+        // the QVideoDeviceSelectorControl should result in loading the default camera
+        QCamera camera(QCamera::FrontFace);
+        QCOMPARE(camera.availability(), QMultimedia::Available);
+        QCOMPARE(camera.error(), QCamera::NoError);
+    }
+
+    // Service implements QVideoDeviceSelectorControl
+    provider->service = mockCameraService;
+
+    {
+        QCamera camera;
+        QCOMPARE(camera.availability(), QMultimedia::Available);
+        QCOMPARE(camera.error(), QCamera::NoError);
+        QCOMPARE(mockCameraService->mockVideoDeviceSelectorControl->selectedDevice(), 1); // default is 1
+    }
+
+    {
+        QCamera camera(QCameraInfo::defaultCamera());
+        QCOMPARE(camera.availability(), QMultimedia::Available);
+        QCOMPARE(camera.error(), QCamera::NoError);
+        QCOMPARE(mockCameraService->mockVideoDeviceSelectorControl->selectedDevice(), 1);
+        QCOMPARE(QCameraInfo(camera), QCameraInfo::defaultCamera());
+    }
+
+    {
+        QCameraInfo cameraInfo = QCameraInfo::availableCameras().at(0);
+        QCamera camera(cameraInfo);
+        QCOMPARE(camera.availability(), QMultimedia::Available);
+        QCOMPARE(camera.error(), QCamera::NoError);
+        QCOMPARE(mockCameraService->mockVideoDeviceSelectorControl->selectedDevice(), 0);
+        QCOMPARE(QCameraInfo(camera), cameraInfo);
+    }
+
+    {
+        // Requesting a camera at a position which is not available should result in
+        // loading the default camera
+        QCamera camera(QCamera::FrontFace);
+        QCOMPARE(camera.availability(), QMultimedia::Available);
+        QCOMPARE(camera.error(), QCamera::NoError);
+        QCOMPARE(mockCameraService->mockVideoDeviceSelectorControl->selectedDevice(), 1);
+    }
+
+    {
+        QCamera camera(QCamera::BackFace);
+        QCOMPARE(camera.availability(), QMultimedia::Available);
+        QCOMPARE(camera.error(), QCamera::NoError);
+        QCOMPARE(mockCameraService->mockVideoDeviceSelectorControl->selectedDevice(), 0);
+    }
+
+    {
+        // Should load the default camera when UnspecifiedPosition is requested
+        QCamera camera(QCamera::UnspecifiedPosition);
+        QCOMPARE(camera.availability(), QMultimedia::Available);
+        QCOMPARE(camera.error(), QCamera::NoError);
+        QCOMPARE(mockCameraService->mockVideoDeviceSelectorControl->selectedDevice(), 1);
+    }
 }
 
 /* captureModeChanged Signal test case. */
@@ -1206,18 +1843,18 @@ void tst_QCamera::testRequestedLocks()
 
     camera.unlock();
     camera.searchAndLock(QCamera::LockWhiteBalance);
-    QCOMPARE(camera.requestedLocks(),QCamera::LockWhiteBalance);
+    QCOMPARE(camera.requestedLocks(),QCamera::NoLock);
 
     camera.unlock();
     camera.searchAndLock(QCamera::LockExposure |QCamera::LockFocus );
     QCOMPARE(camera.requestedLocks(),QCamera::LockExposure |QCamera::LockFocus );
     camera.searchAndLock(QCamera::LockWhiteBalance);
-    QCOMPARE(camera.requestedLocks(),QCamera::LockExposure |QCamera::LockFocus|QCamera::LockWhiteBalance );
+    QCOMPARE(camera.requestedLocks(),QCamera::LockExposure |QCamera::LockFocus);
     camera.unlock(QCamera::LockExposure);
-    QCOMPARE(camera.requestedLocks(),QCamera::LockFocus|QCamera::LockWhiteBalance );
+    QCOMPARE(camera.requestedLocks(),QCamera::LockFocus);
     camera.unlock(QCamera::LockFocus);
     camera.searchAndLock(QCamera::LockExposure |QCamera::LockWhiteBalance );
-    QCOMPARE(camera.requestedLocks(),QCamera::LockExposure|QCamera::LockWhiteBalance );
+    QCOMPARE(camera.requestedLocks(),QCamera::LockExposure);
 }
 
 /* Test case for supportedLocks() */
@@ -1256,8 +1893,8 @@ void tst_QCamera::testSearchAndLockWithLockTypes()
     /* Spy the signals */
     QSignalSpy lockedSignal(&camera, SIGNAL(locked()));
     QSignalSpy lockFailedSignal(&camera, SIGNAL(lockFailed()));
-    QSignalSpy lockStatusChangedSignal(&camera, SIGNAL(lockStatusChanged(QCamera::LockStatus, QCamera::LockChangeReason)));
-    QSignalSpy lockStatusChangedSignalWithType(&camera, SIGNAL(lockStatusChanged(QCamera::LockType,QCamera::LockStatus, QCamera::LockChangeReason)));
+    QSignalSpy lockStatusChangedSignal(&camera, SIGNAL(lockStatusChanged(QCamera::LockStatus,QCamera::LockChangeReason)));
+    QSignalSpy lockStatusChangedSignalWithType(&camera, SIGNAL(lockStatusChanged(QCamera::LockType,QCamera::LockStatus,QCamera::LockChangeReason)));
 
     /* search and lock the camera with QCamera::LockExposure and verify if the signal is emitted correctly */
     camera.searchAndLock(QCamera::LockExposure);
@@ -1291,8 +1928,8 @@ void tst_QCamera::testUnlockWithType()
     /* Spy the signal */
     QSignalSpy lockedSignal(&camera, SIGNAL(locked()));
     QSignalSpy lockFailedSignal(&camera, SIGNAL(lockFailed()));
-    QSignalSpy lockStatusChangedSignal(&camera, SIGNAL(lockStatusChanged(QCamera::LockStatus, QCamera::LockChangeReason)));
-    QSignalSpy lockStatusChangedSignalWithType(&camera, SIGNAL(lockStatusChanged(QCamera::LockType,QCamera::LockStatus, QCamera::LockChangeReason)));
+    QSignalSpy lockStatusChangedSignal(&camera, SIGNAL(lockStatusChanged(QCamera::LockStatus,QCamera::LockChangeReason)));
+    QSignalSpy lockStatusChangedSignalWithType(&camera, SIGNAL(lockStatusChanged(QCamera::LockType,QCamera::LockStatus,QCamera::LockChangeReason)));
 
     /* lock the camera with QCamera::LockExposure and Verify if the signal is emitted correctly */
     camera.searchAndLock(QCamera::LockExposure);
@@ -1372,7 +2009,7 @@ void tst_QCamera::testLockStatusChangedWithTypesSignal()
     QCOMPARE(camera.lockStatus(), QCamera::Unlocked);
 
     /* Spy the signal lockStatusChanged(QCamera::LockType,QCamera::LockStatus, QCamera::LockChangeReason) */
-    QSignalSpy lockStatusChangedSignalWithType(&camera, SIGNAL(lockStatusChanged(QCamera::LockType,QCamera::LockStatus, QCamera::LockChangeReason)));
+    QSignalSpy lockStatusChangedSignalWithType(&camera, SIGNAL(lockStatusChanged(QCamera::LockType,QCamera::LockStatus,QCamera::LockChangeReason)));
 
     /* Lock the camera with type QCamera::LockExposure */
     camera.searchAndLock(QCamera::LockExposure);
@@ -1518,7 +2155,7 @@ void tst_QCamera::testLockChangeReason()
 
     QCamera camera;
 
-    QSignalSpy lockStatusChangedSignalWithType(&camera, SIGNAL(lockStatusChanged(QCamera::LockType,QCamera::LockStatus, QCamera::LockChangeReason)));
+    QSignalSpy lockStatusChangedSignalWithType(&camera, SIGNAL(lockStatusChanged(QCamera::LockType,QCamera::LockStatus,QCamera::LockChangeReason)));
 
     /* Set the lockChangeReason */
     service.mockLocksControl->setLockChangeReason(QCamera::LockAcquired);
@@ -1529,6 +2166,7 @@ void tst_QCamera::testLockChangeReason()
     QVERIFY(LockChangeReason == QCamera::LockAcquired);
 
 }
+
 /* All the enums test case for QCameraControl class*/
 void tst_QCamera::testEnumsOfQCameraControl()
 {

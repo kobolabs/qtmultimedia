@@ -1,50 +1,43 @@
 /****************************************************************************
 **
-** Copyright (C) 2013 Digia Plc and/or its subsidiary(-ies).
-** Contact: http://www.qt-project.org/legal
+** Copyright (C) 2015 The Qt Company Ltd.
+** Contact: http://www.qt.io/licensing/
 **
 ** This file is part of the Qt Mobility Components.
 **
-** $QT_BEGIN_LICENSE:LGPL$
+** $QT_BEGIN_LICENSE:LGPL21$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and Digia.  For licensing terms and
-** conditions see http://qt.digia.com/licensing.  For further information
-** use the contact form at http://qt.digia.com/contact-us.
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see http://www.qt.io/terms-conditions. For further
+** information use the contact form at http://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU Lesser General Public License version 2.1 requirements
-** will be met: http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 2.1 or version 3 as published by the Free
+** Software Foundation and appearing in the file LICENSE.LGPLv21 and
+** LICENSE.LGPLv3 included in the packaging of this file. Please review the
+** following information to ensure the GNU Lesser General Public License
+** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
+** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
 **
-** In addition, as a special exception, Digia gives you certain additional
-** rights.  These rights are described in the Digia Qt LGPL Exception
+** As a special exception, The Qt Company gives you certain additional
+** rights. These rights are described in The Qt Company LGPL Exception
 ** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3.0 as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU General Public License version 3.0 requirements will be
-** met: http://www.gnu.org/copyleft/gpl.html.
-**
 **
 ** $QT_END_LICENSE$
 **
 ****************************************************************************/
 
-import QtQuick 2.0
-import Qt.labs.folderlistmodel 2.0
+import QtQuick 2.1
+import Qt.labs.folderlistmodel 2.1
 
 Rectangle {
     id: fileBrowser
     color: "transparent"
+    z: 4
 
     property string folder
     property bool shown: loader.sourceComponent
@@ -75,12 +68,12 @@ Rectangle {
 
         Rectangle {
             id: root
-            color: "white"
+            color: "black"
             property bool showFocusHighlight: false
             property variant folders: folders1
             property variant view: view1
             property alias folder: folders1.folder
-            property color textColor: "black"
+            property color textColor: "white"
 
             FolderListModel {
                 id: folders1
@@ -112,7 +105,7 @@ Rectangle {
                             fileBrowser.selectFile(path)
                     }
                     width: root.width
-                    height: 52
+                    height: itemHeight
                     color: "transparent"
 
                     Rectangle {
@@ -126,10 +119,12 @@ Rectangle {
                     }
 
                     Item {
-                        width: 48; height: 48
+                        width: itemHeight; height: itemHeight
                         Image {
-                            source: "qrc:/images/folder.png"
-                            anchors.centerIn: parent
+                            source: "qrc:/images/icon_Folder.png"
+                            fillMode: Image.PreserveAspectFit
+                            anchors.fill: parent
+                            anchors.margins: scaledMargin
                             visible: folders.isFolder(index)
                         }
                     }
@@ -138,8 +133,8 @@ Rectangle {
                         id: nameText
                         anchors.fill: parent; verticalAlignment: Text.AlignVCenter
                         text: fileName
-                        anchors.leftMargin: 54
-                        font.pixelSize: 32
+                        anchors.leftMargin: itemHeight + scaledMargin
+                        font.pixelSize: fontSize
                         color: (wrapper.ListView.isCurrentItem && root.showFocusHighlight) ? palette.highlightedText : textColor
                         elide: Text.ElideRight
                     }
@@ -262,56 +257,45 @@ Rectangle {
                 Keys.onPressed: root.keyPressed(event.key)
             }
 
-            Rectangle {
+            Button {
                 id: cancelButton
-                width: 100
-                height: titleBar.height - 7
-                color: "black"
-                anchors { bottom: parent.bottom; horizontalCenter: parent.horizontalCenter }
-
-                Text {
-                    anchors { fill: parent; margins: 4 }
-                    text: "Cancel"
-                    color: "white"
-                    horizontalAlignment: Text.AlignHCenter
-                    verticalAlignment: Text.AlignVCenter
-                    font.pixelSize: 20
-                }
-
-                MouseArea {
-                    anchors.fill: parent
-                    onClicked: fileBrowser.selectFile("")
-                }
+                width: itemWidth
+                height: itemHeight
+                color: "#353535"
+                anchors { bottom: parent.bottom; right: parent.right; margins: 5 * scaledMargin }
+                text: "Cancel"
+                horizontalAlign: Text.AlignHCenter
+                onClicked: fileBrowser.selectFile("")
             }
 
             Keys.onPressed: {
                 root.keyPressed(event.key);
-                if (event.key == Qt.Key_Return || event.key == Qt.Key_Select || event.key == Qt.Key_Right) {
+                if (event.key === Qt.Key_Return || event.key === Qt.Key_Select || event.key === Qt.Key_Right) {
                     view.currentItem.launch();
                     event.accepted = true;
-                } else if (event.key == Qt.Key_Left) {
+                } else if (event.key === Qt.Key_Left) {
                     up();
                 }
             }
 
-            BorderImage {
-                source: "qrc:/images/titlebar.sci";
+            // titlebar
+            Rectangle {
+                color: "black"
                 width: parent.width;
-                height: 52
-                y: -7
+                height: itemHeight
                 id: titleBar
 
                 Rectangle {
                     id: upButton
-                    width: 48
-                    height: titleBar.height - 7
+                    width: titleBar.height
+                    height: titleBar.height
                     color: "transparent"
-                    Image { anchors.centerIn: parent; source: "qrc:/images/up.png" }
-                    MouseArea { id: upRegion; anchors.centerIn: parent
-                        width: 56
-                        height: 56
-                        onClicked: up()
-                    }
+                    anchors.left: parent.left
+                    anchors.verticalCenter: parent.verticalCenter
+                    anchors.margins: scaledMargin
+
+                    Image { anchors.fill: parent; anchors.margins: scaledMargin; source: "qrc:/images/icon_BackArrow.png" }
+                    MouseArea { id: upRegion; anchors.fill: parent; onClicked: up() }
                     states: [
                         State {
                             name: "pressed"
@@ -321,21 +305,21 @@ Rectangle {
                     ]
                 }
 
-                Rectangle {
-                    color: "gray"
-                    x: 48
-                    width: 1
-                    height: 44
-                }
-
                 Text {
                     anchors.left: upButton.right; anchors.right: parent.right; height: parent.height
-                    anchors.leftMargin: 4; anchors.rightMargin: 4
+                    anchors.leftMargin: 10; anchors.rightMargin: 4
                     text: folders.folder
                     color: "white"
-                    elide: Text.ElideLeft; horizontalAlignment: Text.AlignRight; verticalAlignment: Text.AlignVCenter
-                    font.pixelSize: 32
+                    elide: Text.ElideLeft; horizontalAlignment: Text.AlignLeft; verticalAlignment: Text.AlignVCenter
+                    font.pixelSize: fontSize
                 }
+            }
+
+            Rectangle {
+                color: "#353535"
+                width: parent.width
+                height: 1
+                anchors.top: titleBar.bottom
             }
 
             function down(path) {

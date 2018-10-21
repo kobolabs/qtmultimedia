@@ -1,39 +1,31 @@
 /****************************************************************************
 **
-** Copyright (C) 2013 Digia Plc and/or its subsidiary(-ies).
-** Contact: http://www.qt-project.org/legal
+** Copyright (C) 2015 The Qt Company Ltd.
+** Contact: http://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL$
+** $QT_BEGIN_LICENSE:LGPL21$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and Digia.  For licensing terms and
-** conditions see http://qt.digia.com/licensing.  For further information
-** use the contact form at http://qt.digia.com/contact-us.
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see http://www.qt.io/terms-conditions. For further
+** information use the contact form at http://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU Lesser General Public License version 2.1 requirements
-** will be met: http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 2.1 or version 3 as published by the Free
+** Software Foundation and appearing in the file LICENSE.LGPLv21 and
+** LICENSE.LGPLv3 included in the packaging of this file. Please review the
+** following information to ensure the GNU Lesser General Public License
+** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
+** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
 **
-** In addition, as a special exception, Digia gives you certain additional
-** rights.  These rights are described in the Digia Qt LGPL Exception
+** As a special exception, The Qt Company gives you certain additional
+** rights. These rights are described in The Qt Company LGPL Exception
 ** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3.0 as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU General Public License version 3.0 requirements will be
-** met: http://www.gnu.org/copyleft/gpl.html.
-**
 **
 ** $QT_END_LICENSE$
 **
@@ -652,7 +644,7 @@ void tst_QAudioInput::push()
     QByteArray buffer(AUDIO_BUFFER, 0);
     qint64 len = (audioFormat.sampleRate()*audioFormat.channelCount()*(audioFormat.sampleSize()/8)*2); // 2 seconds
     while (totalBytesRead < len) {
-        QTRY_VERIFY(audioInput.bytesReady() >= audioInput.periodSize());
+        QTRY_VERIFY_WITH_TIMEOUT(audioInput.bytesReady() >= audioInput.periodSize(), 10000);
         qint64 bytesRead = feed->read(buffer.data(), audioInput.periodSize());
         audioFile->write(buffer.constData(),bytesRead);
         totalBytesRead+=bytesRead;
@@ -733,7 +725,7 @@ void tst_QAudioInput::pushSuspendResume()
     QByteArray buffer(AUDIO_BUFFER, 0);
     qint64 len = (audioFormat.sampleRate()*audioFormat.channelCount()*(audioFormat.sampleSize()/8)); // 1 seconds
     while (totalBytesRead < len) {
-        QTRY_VERIFY(audioInput.bytesReady() >= audioInput.periodSize());
+        QTRY_VERIFY_WITH_TIMEOUT(audioInput.bytesReady() >= audioInput.periodSize(), 10000);
         qint64 bytesRead = feed->read(buffer.data(), audioInput.periodSize());
         audioFile->write(buffer.constData(),bytesRead);
         totalBytesRead+=bytesRead;
@@ -788,7 +780,7 @@ void tst_QAudioInput::pushSuspendResume()
     totalBytesRead = 0;
     firstBuffer = true;
     while (totalBytesRead < len && audioInput.state() != QAudio::StoppedState) {
-        QTRY_VERIFY(audioInput.bytesReady() >= audioInput.periodSize());
+        QTRY_VERIFY_WITH_TIMEOUT(audioInput.bytesReady() >= audioInput.periodSize(), 10000);
         qint64 bytesRead = feed->read(buffer.data(), audioInput.periodSize());
         audioFile->write(buffer.constData(),bytesRead);
         totalBytesRead+=bytesRead;
@@ -835,7 +827,7 @@ void tst_QAudioInput::reset()
         QVERIFY2((audioInput.state() == QAudio::IdleState), "didn't transition to IdleState after start()");
         QVERIFY2((audioInput.error() == QAudio::NoError), "error state is not equal to QAudio::NoError after start()");
         QVERIFY(audioInput.periodSize() > 0);
-        QTRY_VERIFY2((audioInput.bytesReady() > audioInput.periodSize()), "no bytes available after starting");
+        QTRY_VERIFY2_WITH_TIMEOUT((audioInput.bytesReady() > audioInput.periodSize()), "no bytes available after starting", 10000);
 
         // Trigger a read
         QByteArray data = device->read(audioInput.periodSize());

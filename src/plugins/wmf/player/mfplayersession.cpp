@@ -1,39 +1,31 @@
 /****************************************************************************
 **
-** Copyright (C) 2013 Digia Plc and/or its subsidiary(-ies).
-** Contact: http://www.qt-project.org/legal
+** Copyright (C) 2015 The Qt Company Ltd.
+** Contact: http://www.qt.io/licensing/
 **
 ** This file is part of the Qt Mobility Components.
 **
-** $QT_BEGIN_LICENSE:LGPL$
+** $QT_BEGIN_LICENSE:LGPL21$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and Digia.  For licensing terms and
-** conditions see http://qt.digia.com/licensing.  For further information
-** use the contact form at http://qt.digia.com/contact-us.
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see http://www.qt.io/terms-conditions. For further
+** information use the contact form at http://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU Lesser General Public License version 2.1 requirements
-** will be met: http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 2.1 or version 3 as published by the Free
+** Software Foundation and appearing in the file LICENSE.LGPLv21 and
+** LICENSE.LGPLv3 included in the packaging of this file. Please review the
+** following information to ensure the GNU Lesser General Public License
+** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
+** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
 **
-** In addition, as a special exception, Digia gives you certain additional
-** rights.  These rights are described in the Digia Qt LGPL Exception
+** As a special exception, The Qt Company gives you certain additional
+** rights. These rights are described in The Qt Company LGPL Exception
 ** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3.0 as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU General Public License version 3.0 requirements will be
-** met: http://www.gnu.org/copyleft/gpl.html.
-**
 **
 ** $QT_END_LICENSE$
 **
@@ -51,9 +43,7 @@
 #include <QtCore/qbuffer.h>
 
 #include "mfplayercontrol.h"
-#ifndef Q_WS_SIMULATOR
-#include "evr9videowindowcontrol.h"
-#endif
+#include "mfevrvideowindowcontrol.h"
 #include "mfvideorenderercontrol.h"
 #include "mfaudioendpointcontrol.h"
 
@@ -68,339 +58,6 @@
 #include <wmcodecdsp.h>
 
 //#define DEBUG_MEDIAFOUNDATION
-//#define TEST_STREAMING
-
-namespace
-{
-    //MFStream is added for supporting QIODevice type of media source.
-    //It is used to delegate invocations from media foundation(through IMFByteStream) to QIODevice.
-    class MFStream : public QObject, public IMFByteStream
-    {
-        Q_OBJECT
-    public:
-        MFStream(QIODevice *stream, bool ownStream)
-            : m_cRef(1)
-            , m_stream(stream)
-            , m_ownStream(ownStream)
-            , m_currentReadResult(0)
-        {
-            //Move to the thread of the stream object
-            //to make sure invocations on stream
-            //are happened in the same thread of stream object
-            this->moveToThread(stream->thread());
-            connect(stream, SIGNAL(readyRead()), this, SLOT(handleReadyRead()));
-        }
-
-        ~MFStream()
-        {
-            if (m_currentReadResult)
-                m_currentReadResult->Release();
-            if (m_ownStream)
-                m_stream->deleteLater();
-        }
-
-        //from IUnknown
-        STDMETHODIMP QueryInterface(REFIID riid, LPVOID *ppvObject)
-        {
-            if (!ppvObject)
-                return E_POINTER;
-            if (riid == IID_IMFByteStream) {
-                *ppvObject = static_cast<IMFByteStream*>(this);
-            } else if (riid == IID_IUnknown) {
-                *ppvObject = static_cast<IUnknown*>(this);
-            } else {
-                *ppvObject =  NULL;
-                return E_NOINTERFACE;
-            }
-            AddRef();
-            return S_OK;
-        }
-
-        STDMETHODIMP_(ULONG) AddRef(void)
-        {
-            return InterlockedIncrement(&m_cRef);
-        }
-
-        STDMETHODIMP_(ULONG) Release(void)
-        {
-            LONG cRef = InterlockedDecrement(&m_cRef);
-            if (cRef == 0) {
-                this->deleteLater();
-            }
-            return cRef;
-        }
-
-
-        //from IMFByteStream
-        STDMETHODIMP GetCapabilities(DWORD *pdwCapabilities)
-        {
-            if (!pdwCapabilities)
-                return E_INVALIDARG;
-            *pdwCapabilities = MFBYTESTREAM_IS_READABLE;
-            if (!m_stream->isSequential())
-                *pdwCapabilities |= MFBYTESTREAM_IS_SEEKABLE;
-            return S_OK;
-        }
-
-        STDMETHODIMP GetLength(QWORD *pqwLength)
-        {
-            if (!pqwLength)
-                return E_INVALIDARG;
-            QMutexLocker locker(&m_mutex);
-            *pqwLength = QWORD(m_stream->size());
-            return S_OK;
-        }
-
-        STDMETHODIMP SetLength(QWORD)
-        {
-            return E_NOTIMPL;
-        }
-
-        STDMETHODIMP GetCurrentPosition(QWORD *pqwPosition)
-        {
-            if (!pqwPosition)
-                return E_INVALIDARG;
-            QMutexLocker locker(&m_mutex);
-            *pqwPosition = m_stream->pos();
-            return S_OK;
-        }
-
-        STDMETHODIMP SetCurrentPosition(QWORD qwPosition)
-        {
-            QMutexLocker locker(&m_mutex);
-            //SetCurrentPosition may happend during the BeginRead/EndRead pair,
-            //refusing to execute SetCurrentPosition during that time seems to be
-            //the simplest workable solution
-            if (m_currentReadResult)
-                return S_FALSE;
-
-            bool seekOK = m_stream->seek(qint64(qwPosition));
-            if (seekOK)
-                return S_OK;
-            else
-                return S_FALSE;
-        }
-
-        STDMETHODIMP IsEndOfStream(BOOL *pfEndOfStream)
-        {
-            if (!pfEndOfStream)
-                return E_INVALIDARG;
-            QMutexLocker locker(&m_mutex);
-            *pfEndOfStream = m_stream->atEnd() ? TRUE : FALSE;
-            return S_OK;
-        }
-
-        STDMETHODIMP Read(BYTE *pb, ULONG cb, ULONG *pcbRead)
-        {
-            QMutexLocker locker(&m_mutex);
-            qint64 read = m_stream->read((char*)(pb), qint64(cb));
-            if (pcbRead)
-                *pcbRead = ULONG(read);
-            return S_OK;
-        }
-
-        STDMETHODIMP BeginRead(BYTE *pb, ULONG cb, IMFAsyncCallback *pCallback,
-                               IUnknown *punkState)
-        {
-            if (!pCallback || !pb)
-                return E_INVALIDARG;
-
-            Q_ASSERT(m_currentReadResult == NULL);
-
-            AsyncReadState *state = new (std::nothrow) AsyncReadState(pb, cb);
-            if (state == NULL)
-                return E_OUTOFMEMORY;
-
-            HRESULT hr = MFCreateAsyncResult(state, pCallback, punkState, &m_currentReadResult);
-            state->Release();
-            if (FAILED(hr))
-                return hr;
-
-            QCoreApplication::postEvent(this, new QEvent(QEvent::User));
-            return hr;
-        }
-
-        STDMETHODIMP EndRead(IMFAsyncResult* pResult, ULONG *pcbRead)
-        {
-            if (!pcbRead)
-                return E_INVALIDARG;
-            IUnknown *pUnk;
-            pResult->GetObject(&pUnk);
-            AsyncReadState *state = static_cast<AsyncReadState*>(pUnk);
-            *pcbRead = state->bytesRead();
-            pUnk->Release();
-
-            m_currentReadResult->Release();
-            m_currentReadResult = NULL;
-
-            return S_OK;
-        }
-
-        STDMETHODIMP Write(const BYTE *, ULONG, ULONG *)
-        {
-            return E_NOTIMPL;
-        }
-
-        STDMETHODIMP BeginWrite(const BYTE *, ULONG ,
-                                IMFAsyncCallback *,
-                                IUnknown *)
-        {
-            return E_NOTIMPL;
-        }
-
-        STDMETHODIMP EndWrite(IMFAsyncResult *,
-                              ULONG *)
-        {
-            return E_NOTIMPL;
-        }
-
-        STDMETHODIMP Seek(
-            MFBYTESTREAM_SEEK_ORIGIN SeekOrigin,
-            LONGLONG llSeekOffset,
-            DWORD,
-            QWORD *pqwCurrentPosition)
-        {
-            QMutexLocker locker(&m_mutex);
-            if (m_currentReadResult)
-                return S_FALSE;
-
-            qint64 pos = qint64(llSeekOffset);
-            switch (SeekOrigin) {
-            case msoCurrent:
-                pos += m_stream->pos();
-                break;
-            }
-            bool seekOK = m_stream->seek(pos);
-            if (*pqwCurrentPosition)
-                *pqwCurrentPosition = pos;
-            if (seekOK)
-                return S_OK;
-            else
-                return S_FALSE;
-        }
-
-        STDMETHODIMP Flush()
-        {
-            return E_NOTIMPL;
-        }
-
-        STDMETHODIMP Close()
-        {
-            QMutexLocker locker(&m_mutex);
-            if (m_ownStream)
-                m_stream->close();
-            return S_OK;
-        }
-
-    private:
-        //AsyncReadState is a helper class used in BeginRead for asynchronous operation
-        //to record some BeginRead parameters, so these parameters could be
-        //used later when actually executing the read operation in another thread.
-        class AsyncReadState : public IUnknown
-        {
-        public:
-            AsyncReadState(BYTE *pb, ULONG cb)
-                : m_cRef(1)
-                , m_pb(pb)
-                , m_cb(cb)
-                , m_cbRead(0)
-            {
-            }
-
-            //from IUnknown
-            STDMETHODIMP QueryInterface(REFIID riid, LPVOID *ppvObject)
-            {
-                if (!ppvObject)
-                    return E_POINTER;
-
-                if (riid == IID_IUnknown) {
-                    *ppvObject = static_cast<IUnknown*>(this);
-                } else {
-                    *ppvObject =  NULL;
-                    return E_NOINTERFACE;
-                }
-                AddRef();
-                return S_OK;
-            }
-
-            STDMETHODIMP_(ULONG) AddRef(void)
-            {
-                return InterlockedIncrement(&m_cRef);
-            }
-
-            STDMETHODIMP_(ULONG) Release(void)
-            {
-                LONG cRef = InterlockedDecrement(&m_cRef);
-                if (cRef == 0)
-                    delete this;
-                // For thread safety, return a temporary variable.
-                return cRef;
-            }
-
-            BYTE* pb() const { return m_pb; }
-            ULONG cb() const { return m_cb; }
-            ULONG bytesRead() const { return m_cbRead; }
-
-            void setBytesRead(ULONG cbRead) { m_cbRead = cbRead; }
-
-        private:
-            long m_cRef;
-            BYTE *m_pb;
-            ULONG m_cb;
-            ULONG m_cbRead;
-        };
-
-        long m_cRef;
-        QIODevice *m_stream;
-        bool m_ownStream;
-        DWORD m_workQueueId;
-        QMutex m_mutex;
-
-        void doRead()
-        {
-            bool readDone = true;
-            IUnknown *pUnk = NULL;
-            HRESULT    hr = m_currentReadResult->GetObject(&pUnk);
-            if (SUCCEEDED(hr)) {
-                //do actual read
-                AsyncReadState *state =  static_cast<AsyncReadState*>(pUnk);
-                ULONG cbRead;
-                Read(state->pb(), state->cb() - state->bytesRead(), &cbRead);
-                pUnk->Release();
-
-                state->setBytesRead(cbRead + state->bytesRead());
-                if (state->cb() > state->bytesRead() && !m_stream->atEnd()) {
-                    readDone = false;
-                }
-            }
-
-            if (readDone) {
-                //now inform the original caller
-                m_currentReadResult->SetStatus(hr);
-                MFInvokeCallback(m_currentReadResult);
-            }
-        }
-
-
-    private Q_SLOTS:
-        void handleReadyRead()
-        {
-            doRead();
-        }
-
-    protected:
-        void customEvent(QEvent *event)
-        {
-            if (event->type() != QEvent::User) {
-                QObject::customEvent(event);
-                return;
-            }
-            doRead();
-        }
-        IMFAsyncResult *m_currentReadResult;
-    };
-}
-
 
 MFPlayerSession::MFPlayerSession(MFPlayerService *playerService)
     : m_playerService(playerService)
@@ -411,6 +68,8 @@ MFPlayerSession::MFPlayerSession(MFPlayerService *playerService)
     , m_rateSupport(0)
     , m_volumeControl(0)
     , m_netsourceStatistics(0)
+    , m_duration(0)
+    , m_sourceResolver(0)
     , m_hCloseEvent(0)
     , m_closing(false)
     , m_pendingRate(1)
@@ -424,7 +83,7 @@ MFPlayerSession::MFPlayerSession(MFPlayerService *playerService)
     , m_audioSampleGrabberNode(0)
     , m_videoProbeMFT(0)
 {
-    QObject::connect(this, SIGNAL(sessionEvent(IMFMediaEvent *)), this, SLOT(handleSessionEvent(IMFMediaEvent *)));
+    QObject::connect(this, SIGNAL(sessionEvent(IMFMediaEvent*)), this, SLOT(handleSessionEvent(IMFMediaEvent*)));
 
     m_pendingState = NoPending;
     ZeroMemory(&m_state, sizeof(m_state));
@@ -479,10 +138,8 @@ void MFPlayerSession::close()
 
     if (m_playerService->videoRendererControl()) {
         m_playerService->videoRendererControl()->releaseActivate();
-#ifndef Q_WS_SIMULATOR
     } else if (m_playerService->videoWindowControl()) {
         m_playerService->videoWindowControl()->releaseActivate();
-#endif
     }
 
     if (m_session)
@@ -536,7 +193,7 @@ void MFPlayerSession::load(const QMediaContent &media, QIODevice *stream)
     clear();
     QMediaResourceList resources = media.resources();
 
-    if (m_status == QMediaPlayer::LoadingMedia)
+    if (m_status == QMediaPlayer::LoadingMedia && m_sourceResolver)
         m_sourceResolver->cancel();
 
     if (resources.isEmpty() && !stream) {
@@ -581,14 +238,19 @@ void MFPlayerSession::handleSourceError(long hr)
 
 void MFPlayerSession::handleMediaSourceReady()
 {
-    if (QMediaPlayer::LoadingMedia != m_status)
+    if (QMediaPlayer::LoadingMedia != m_status || !m_sourceResolver || m_sourceResolver != sender())
         return;
 #ifdef DEBUG_MEDIAFOUNDATION
     qDebug() << "handleMediaSourceReady";
 #endif
     HRESULT hr = S_OK;
-    IMFPresentationDescriptor* sourcePD;
     IMFMediaSource* mediaSource = m_sourceResolver->mediaSource();
+
+    DWORD dwCharacteristics = 0;
+    mediaSource->GetCharacteristics(&dwCharacteristics);
+    emit seekableUpdate(MFMEDIASOURCE_CAN_SEEK & dwCharacteristics);
+
+    IMFPresentationDescriptor* sourcePD;
     hr = mediaSource->CreatePresentationDescriptor(&sourcePD);
     if (SUCCEEDED(hr)) {
         m_duration = 0;
@@ -597,10 +259,30 @@ void MFPlayerSession::handleMediaSourceReady()
         //convert from 100 nanosecond to milisecond
         emit durationUpdate(qint64(m_duration / 10000));
         setupPlaybackTopology(mediaSource, sourcePD);
+        sourcePD->Release();
     } else {
         changeStatus(QMediaPlayer::InvalidMedia);
         emit error(QMediaPlayer::ResourceError, tr("Cannot create presentation descriptor."), true);
     }
+}
+
+MFPlayerSession::MediaType MFPlayerSession::getStreamType(IMFStreamDescriptor *stream) const
+{
+    if (!stream)
+        return Unknown;
+
+    IMFMediaTypeHandler *typeHandler = NULL;
+    if (SUCCEEDED(stream->GetMediaTypeHandler(&typeHandler))) {
+        GUID guidMajorType;
+        if (SUCCEEDED(typeHandler->GetMajorType(&guidMajorType))) {
+            if (guidMajorType == MFMediaType_Audio)
+                return Audio;
+            else if (guidMajorType == MFMediaType_Video)
+                return Video;
+        }
+    }
+
+    return Unknown;
 }
 
 void MFPlayerSession::setupPlaybackTopology(IMFMediaSource *source, IMFPresentationDescriptor *sourcePD)
@@ -631,45 +313,58 @@ void MFPlayerSession::setupPlaybackTopology(IMFMediaSource *source, IMFPresentat
     for (DWORD i = 0; i < cSourceStreams; i++)
     {
         BOOL fSelected = FALSE;
+        bool streamAdded = false;
         IMFStreamDescriptor *streamDesc = NULL;
 
         HRESULT hr = sourcePD->GetStreamDescriptorByIndex(i, &fSelected, &streamDesc);
         if (SUCCEEDED(hr)) {
-            MediaType mediaType = Unknown;
-            IMFTopologyNode *sourceNode = addSourceNode(topology, source, sourcePD, streamDesc);
-            if (sourceNode) {
-                IMFTopologyNode *outputNode = addOutputNode(streamDesc, mediaType, topology, 0);
-                if (outputNode) {
-                    bool connected = false;
-                    if (mediaType == Audio) {
-                        if (!m_audioSampleGrabberNode)
-                            connected = setupAudioSampleGrabber(topology, sourceNode, outputNode);
-                    } else if (mediaType == Video && outputNodeId == -1) {
-                        // Remember video output node ID.
-                        outputNode->GetTopoNodeID(&outputNodeId);
-                    }
+            // The media might have multiple audio and video streams,
+            // only use one of each kind, and only if it is selected by default.
+            MediaType mediaType = getStreamType(streamDesc);
+            if (mediaType != Unknown
+                    && ((m_mediaTypes & mediaType) == 0) // Check if this type isn't already added
+                    && fSelected) {
 
-                    if (!connected)
-                        hr = sourceNode->ConnectOutput(0, outputNode, 0);
-                    if (FAILED(hr)) {
-                        emit error(QMediaPlayer::FormatError, tr("Unable to play any stream."), false);
-                    }
-                    else {
-                        succeededCount++;
-                        m_mediaTypes |= mediaType;
-                        switch (mediaType) {
-                        case Audio:
-                            emit audioAvailable();
-                            break;
-                        case Video:
-                            emit videoAvailable();
-                            break;
+                IMFTopologyNode *sourceNode = addSourceNode(topology, source, sourcePD, streamDesc);
+                if (sourceNode) {
+                    IMFTopologyNode *outputNode = addOutputNode(mediaType, topology, 0);
+                    if (outputNode) {
+                        bool connected = false;
+                        if (mediaType == Audio) {
+                            if (!m_audioSampleGrabberNode)
+                                connected = setupAudioSampleGrabber(topology, sourceNode, outputNode);
+                        } else if (mediaType == Video && outputNodeId == -1) {
+                            // Remember video output node ID.
+                            outputNode->GetTopoNodeID(&outputNodeId);
                         }
+
+                        if (!connected)
+                            hr = sourceNode->ConnectOutput(0, outputNode, 0);
+
+                        if (FAILED(hr)) {
+                            emit error(QMediaPlayer::FormatError, tr("Unable to play any stream."), false);
+                        } else {
+                            streamAdded = true;
+                            succeededCount++;
+                            m_mediaTypes |= mediaType;
+                            switch (mediaType) {
+                            case Audio:
+                                emit audioAvailable();
+                                break;
+                            case Video:
+                                emit videoAvailable();
+                                break;
+                            }
+                        }
+                        outputNode->Release();
                     }
-                    outputNode->Release();
+                    sourceNode->Release();
                 }
-                sourceNode->Release();
             }
+
+            if (fSelected && !streamAdded)
+                sourcePD->DeselectStream(i);
+
             streamDesc->Release();
         }
     }
@@ -714,55 +409,38 @@ IMFTopologyNode* MFPlayerSession::addSourceNode(IMFTopology* topology, IMFMediaS
     return NULL;
 }
 
-IMFTopologyNode* MFPlayerSession::addOutputNode(IMFStreamDescriptor *streamDesc, MediaType& mediaType, IMFTopology* topology, DWORD sinkID)
+IMFTopologyNode* MFPlayerSession::addOutputNode(MediaType mediaType, IMFTopology* topology, DWORD sinkID)
 {
     IMFTopologyNode *node = NULL;
-    HRESULT hr = MFCreateTopologyNode(MF_TOPOLOGY_OUTPUT_NODE, &node);
-    if (FAILED(hr))
+    if (FAILED(MFCreateTopologyNode(MF_TOPOLOGY_OUTPUT_NODE, &node)))
         return NULL;
-    node->SetUINT32(MF_TOPONODE_NOSHUTDOWN_ON_REMOVE, FALSE);
 
-    mediaType = Unknown;
-    IMFMediaTypeHandler *handler = NULL;
-    hr = streamDesc->GetMediaTypeHandler(&handler);
-    if (SUCCEEDED(hr)) {
-        GUID guidMajorType;
-        hr = handler->GetMajorType(&guidMajorType);
-        if (SUCCEEDED(hr)) {
-            IMFActivate *activate = NULL;
-            if (MFMediaType_Audio == guidMajorType) {
-                mediaType = Audio;
-                activate = m_playerService->audioEndpointControl()->createActivate();
-            } else if (MFMediaType_Video == guidMajorType) {
-                mediaType = Video;
-                if (m_playerService->videoRendererControl()) {
-                    activate = m_playerService->videoRendererControl()->createActivate();
-#ifndef Q_WS_SIMULATOR
-                } else if (m_playerService->videoWindowControl()) {
-                    activate = m_playerService->videoWindowControl()->createActivate();
-#endif
-                } else {
-                    qWarning() << "no videoWindowControl or videoRendererControl, unable to add output node for video data";
-                }
-            } else {
-                // Unknown stream type.
-                emit error(QMediaPlayer::FormatError, tr("Unknown stream type."), false);
-            }
-
-            if (activate) {
-                hr = node->SetObject(activate);
-                if (SUCCEEDED(hr)) {
-                    hr = node->SetUINT32(MF_TOPONODE_STREAMID, sinkID);
-                    if (SUCCEEDED(hr)) {
-                        if (SUCCEEDED(topology->AddNode(node)))
-                            return node;
-                    }
-                }
-            }
+    IMFActivate *activate = NULL;
+    if (mediaType == Audio) {
+        activate = m_playerService->audioEndpointControl()->createActivate();
+    } else if (mediaType == Video) {
+        if (m_playerService->videoRendererControl()) {
+            activate = m_playerService->videoRendererControl()->createActivate();
+        } else if (m_playerService->videoWindowControl()) {
+            activate = m_playerService->videoWindowControl()->createActivate();
+        } else {
+            qWarning() << "no videoWindowControl or videoRendererControl, unable to add output node for video data";
         }
+    } else {
+        // Unknown stream type.
+        emit error(QMediaPlayer::FormatError, tr("Unknown stream type."), false);
     }
-    node->Release();
-    return NULL;
+
+    if (!activate
+            || FAILED(node->SetObject(activate))
+            || FAILED(node->SetUINT32(MF_TOPONODE_STREAMID, sinkID))
+            || FAILED(node->SetUINT32(MF_TOPONODE_NOSHUTDOWN_ON_REMOVE, FALSE))
+            || FAILED(topology->AddNode(node))) {
+        node->Release();
+        node = NULL;
+    }
+
+    return node;
 }
 
 bool MFPlayerSession::addAudioSampleGrabberNode(IMFTopology *topology)
@@ -886,7 +564,10 @@ QAudioFormat MFPlayerSession::audioFormatForMFMediaType(IMFMediaType *mediaType)
     format.setSampleSize(wfx->wBitsPerSample);
     format.setCodec("audio/pcm");
     format.setByteOrder(QAudioFormat::LittleEndian);
-    format.setSampleType(QAudioFormat::SignedInt);
+    if (format.sampleSize() == 8)
+        format.setSampleType(QAudioFormat::UnSignedInt);
+    else
+        format.setSampleType(QAudioFormat::SignedInt);
 
     CoTaskMemFree(wfx);
     return format;
@@ -948,42 +629,39 @@ HRESULT BindOutputNode(IMFTopologyNode *pNode)
 // Sets the IMFStreamSink pointers on all of the output nodes in a topology.
 HRESULT BindOutputNodes(IMFTopology *pTopology)
 {
-    DWORD cNodes = 0;
-
-    IMFCollection *collection = NULL;
-    IUnknown *element = NULL;
-    IMFTopologyNode *node = NULL;
+    IMFCollection *collection;
 
     // Get the collection of output nodes.
     HRESULT hr = pTopology->GetOutputNodeCollection(&collection);
 
     // Enumerate all of the nodes in the collection.
-    if (SUCCEEDED(hr))
+    if (SUCCEEDED(hr)) {
+        DWORD cNodes;
         hr = collection->GetElementCount(&cNodes);
 
-    if (SUCCEEDED(hr)) {
-        for (DWORD i = 0; i < cNodes; i++) {
-            hr = collection->GetElement(i, &element);
-            if (FAILED(hr))
-                break;
+        if (SUCCEEDED(hr)) {
+            for (DWORD i = 0; i < cNodes; i++) {
+                IUnknown *element;
+                hr = collection->GetElement(i, &element);
+                if (FAILED(hr))
+                    break;
 
-            hr = element->QueryInterface(IID_IMFTopologyNode, (void**)&node);
-            if (FAILED(hr))
-                break;
+                IMFTopologyNode *node;
+                hr = element->QueryInterface(IID_IMFTopologyNode, (void**)&node);
+                element->Release();
+                if (FAILED(hr))
+                    break;
 
-            // Bind this node.
-            hr = BindOutputNode(node);
-            if (FAILED(hr))
-                break;
+                // Bind this node.
+                hr = BindOutputNode(node);
+                node->Release();
+                if (FAILED(hr))
+                    break;
+            }
         }
+        collection->Release();
     }
 
-    if (collection)
-        collection->Release();
-    if (element)
-        element->Release();
-    if (node)
-        node->Release();
     return hr;
 }
 
@@ -1028,7 +706,6 @@ IMFTopology *MFPlayerSession::insertMFT(IMFTopology *topology, TOPOID outputNode
             IUnknown *element = 0;
             IMFTopologyNode *node = 0;
             IUnknown *outputObject = 0;
-            IMFMediaTypeHandler *videoSink = 0;
             IMFTopologyNode *inputNode = 0;
             IMFTopologyNode *mftNode = 0;
             bool mftAdded = false;
@@ -1047,22 +724,10 @@ IMFTopology *MFPlayerSession::insertMFT(IMFTopology *topology, TOPOID outputNode
                 if (id != outputNodeId)
                     break;
 
-                // Use output supported media types for the MFT
                 if (FAILED(node->GetObject(&outputObject)))
                     break;
 
-                if (FAILED(outputObject->QueryInterface(IID_IMFMediaTypeHandler, (void**)&videoSink)))
-                    break;
-
-                DWORD mtCount;
-                if (FAILED(videoSink->GetMediaTypeCount(&mtCount)))
-                    break;
-
-                for (DWORD i = 0; i < mtCount; ++i) {
-                    IMFMediaType *type = 0;
-                    if (SUCCEEDED(videoSink->GetMediaTypeByIndex(i, &type)))
-                        m_videoProbeMFT->addSupportedMediaType(type);
-                }
+                m_videoProbeMFT->setVideoSink(outputObject);
 
                 // Insert MFT between the output node and the node connected to it.
                 DWORD outputIndex = 0;
@@ -1096,13 +761,13 @@ IMFTopology *MFPlayerSession::insertMFT(IMFTopology *topology, TOPOID outputNode
                 node->Release();
             if (element)
                 element->Release();
-            if (videoSink)
-                videoSink->Release();
             if (outputObject)
                 outputObject->Release();
 
             if (mftAdded)
                 break;
+            else
+                m_videoProbeMFT->setVideoSink(NULL);
         }
     } while (false);
 
@@ -1323,12 +988,8 @@ void MFPlayerSession::stop(bool immediate)
 
 void MFPlayerSession::start()
 {
-    switch (m_status) {
-    case QMediaPlayer::EndOfMedia:
-        m_varStart.hVal.QuadPart = 0;
-        changeStatus(QMediaPlayer::BufferedMedia);
-        return;
-    }
+    if (m_status == QMediaPlayer::EndOfMedia)
+        m_varStart.hVal.QuadPart = 0; // restart from the beginning
 
 #ifdef DEBUG_MEDIAFOUNDATION
     qDebug() << "start";
@@ -1462,6 +1123,9 @@ void MFPlayerSession::setPositionInternal(qint64 position, Command requestCmd)
     if (m_state.command == CmdStop && requestCmd != CmdSeekResume) {
         m_varStart.vt = VT_I8;
         m_varStart.hVal.QuadPart = LONGLONG(position * 10000);
+        // Even though the position is not actually set on the session yet,
+        // report it to have changed anyway for UI controls to be updated
+        emit positionChanged(this->position());
         return;
     }
 
@@ -1489,8 +1153,8 @@ void MFPlayerSession::setPositionInternal(qint64 position, Command requestCmd)
 
 qreal MFPlayerSession::playbackRate() const
 {
-    if (m_pendingState != NoPending)
-        return m_request.rate;
+    if (m_scrubbing)
+        return m_restoreRate;
     return m_state.rate;
 }
 
@@ -1498,6 +1162,7 @@ void MFPlayerSession::setPlaybackRate(qreal rate)
 {
     if (m_scrubbing) {
         m_restoreRate = rate;
+        emit playbackRateChanged(rate);
         return;
     }
     setPlaybackRateInternal(rate);
@@ -1526,6 +1191,8 @@ void MFPlayerSession::setPlaybackRateInternal(qreal rate)
         isThin = TRUE;
         if (FAILED(m_rateSupport->IsRateSupported(isThin, rate, NULL))) {
             qWarning() << "unable to set playbackrate = " << rate;
+            m_pendingRate = m_request.rate = m_state.rate;
+            return;
         }
     }
     if (m_pendingState != NoPending) {
@@ -1551,6 +1218,7 @@ void MFPlayerSession::commitRateChange(qreal rate, BOOL isThin)
     MFTIME  hnsSystemTime = 0;
     MFTIME  hnsClockTime = 0;
     Command cmdNow = m_state.command;
+    bool resetPosition = false;
     // Allowed rate transitions:
     // Positive <-> negative:   Stopped
     // Negative <-> zero:       Stopped
@@ -1561,6 +1229,13 @@ void MFPlayerSession::commitRateChange(qreal rate, BOOL isThin)
             m_presentationClock->GetCorrelatedTime(0, &hnsClockTime, &hnsSystemTime);
             Q_ASSERT(hnsSystemTime != 0);
 
+            if (rate < 0 || m_state.rate < 0)
+                m_request.setCommand(CmdSeekResume);
+            else if (isThin || m_state.isThin)
+                m_request.setCommand(CmdStartAndSeek);
+            else
+                m_request.setCommand(CmdStart);
+
             // We need to stop only when dealing with negative rates
             if (rate >= 0 && m_state.rate >= 0)
                 pause();
@@ -1569,7 +1244,6 @@ void MFPlayerSession::commitRateChange(qreal rate, BOOL isThin)
 
             // If we deal with negative rates, we stopped the session and consequently
             // reset the position to zero. We then need to resume to the current position.
-            m_request.setCommand(rate < 0 || m_state.rate < 0 ? CmdSeekResume : CmdStart);
             m_request.start = hnsClockTime / 10000;
         } else if (cmdNow == CmdPause) {
             if (rate < 0 || m_state.rate < 0) {
@@ -1578,7 +1252,9 @@ void MFPlayerSession::commitRateChange(qreal rate, BOOL isThin)
                 // session cannot transition back from stopped to paused.
                 // Therefore, this rate transition is not supported while paused.
                 qWarning() << "Unable to change rate from positive to negative or vice versa in paused state";
-                return;
+                rate = m_state.rate;
+                isThin = m_state.isThin;
+                goto done;
             }
 
             // This happens when resuming playback after scrubbing in pause mode.
@@ -1604,22 +1280,48 @@ void MFPlayerSession::commitRateChange(qreal rate, BOOL isThin)
         // Changing rate from negative to zero requires to stop the session
         m_presentationClock->GetCorrelatedTime(0, &hnsClockTime, &hnsSystemTime);
 
+        m_request.setCommand(CmdSeekResume);
+
         stop();
 
-        // Resumte to the current position (stop() will reset the position to 0)
-        m_request.setCommand(CmdSeekResume);
+        // Resume to the current position (stop() will reset the position to 0)
         m_request.start = hnsClockTime / 10000;
+    } else if (!isThin && m_state.isThin) {
+        if (cmdNow == CmdStart) {
+            // When thinning, only key frames are read and presented. Going back
+            // to normal playback requires to reset the current position to force
+            // the pipeline to decode the actual frame at the current position
+            // (which might be earlier than the last decoded key frame)
+            resetPosition = true;
+        } else if (cmdNow == CmdPause) {
+            // If paused, don't reset the position until we resume, otherwise
+            // a new frame will be rendered
+            m_presentationClock->GetCorrelatedTime(0, &hnsClockTime, &hnsSystemTime);
+            m_request.setCommand(CmdSeekResume);
+            m_request.start = hnsClockTime / 10000;
+        }
+
     }
 
     // Set the rate.
     if (FAILED(m_rateControl->SetRate(isThin, rate))) {
         qWarning() << "failed to set playbackrate = " << rate;
-        return;
+        rate = m_state.rate;
+        isThin = m_state.isThin;
+        goto done;
     }
 
+    if (resetPosition) {
+        m_presentationClock->GetCorrelatedTime(0, &hnsClockTime, &hnsSystemTime);
+        setPosition(hnsClockTime / 10000);
+    }
+
+done:
     // Adjust our current rate and requested rate.
     m_pendingRate = m_request.rate = m_state.rate = rate;
-
+    if (rate != 0)
+        m_state.isThin = isThin;
+    emit playbackRateChanged(rate);
 }
 
 void MFPlayerSession::scrub(bool enableScrub)
@@ -1655,8 +1357,10 @@ void MFPlayerSession::setVolume(int volume)
     if (m_volume == volume)
         return;
     m_volume = volume;
-    if (m_volumeControl)
-        m_volumeControl->SetMasterVolume(m_volume * 0.01f);
+
+    if (!m_muted)
+        setVolumeInternal(volume);
+
     emit volumeChanged(m_volume);
 }
 
@@ -1670,9 +1374,24 @@ void MFPlayerSession::setMuted(bool muted)
     if (m_muted == muted)
         return;
     m_muted = muted;
-    if (m_volumeControl)
-        m_volumeControl->SetMute(BOOL(m_muted));
+
+    setVolumeInternal(muted ? 0 : m_volume);
+
     emit mutedChanged(m_muted);
+}
+
+void MFPlayerSession::setVolumeInternal(int volume)
+{
+    if (m_volumeControl) {
+        quint32 channelCount = 0;
+        if (!SUCCEEDED(m_volumeControl->GetChannelCount(&channelCount))
+                || channelCount == 0)
+            return;
+
+        float scaled = volume * 0.01f;
+        for (quint32 i = 0; i < channelCount; ++i)
+            m_volumeControl->SetChannelVolume(i, scaled);
+    }
 }
 
 int MFPlayerSession::bufferStatus()
@@ -1680,14 +1399,17 @@ int MFPlayerSession::bufferStatus()
     if (!m_netsourceStatistics)
         return 0;
     PROPVARIANT var;
+    PropVariantInit(&var);
     PROPERTYKEY key;
     key.fmtid = MFNETSOURCE_STATISTICS;
     key.pid = MFNETSOURCE_BUFFERPROGRESS_ID;
     int progress = -1;
-    if (SUCCEEDED(m_netsourceStatistics->GetValue(key, &var))) {
+    // GetValue returns S_FALSE if the property is not available, which has
+    // a value > 0. We therefore can't use the SUCCEEDED macro here.
+    if (m_netsourceStatistics->GetValue(key, &var) == S_OK) {
         progress = var.lVal;
+        PropVariantClear(&var);
     }
-    PropVariantClear(&var);
 
 #ifdef DEBUG_MEDIAFOUNDATION
     qDebug() << "bufferStatus: progress = " << progress;
@@ -1698,22 +1420,30 @@ int MFPlayerSession::bufferStatus()
 
 QMediaTimeRange MFPlayerSession::availablePlaybackRanges()
 {
-    if (!m_netsourceStatistics)
-        return QMediaTimeRange();
+    // defaults to the whole media
+    qint64 start = 0;
+    qint64 end = qint64(m_duration / 10000);
 
-    qint64 start = 0, end = 0;
-    PROPVARIANT var;
-    PROPERTYKEY key;
-    key.fmtid = MFNETSOURCE_STATISTICS;
-    key.pid = MFNETSOURCE_SEEKRANGESTART_ID;
-    if (SUCCEEDED(m_netsourceStatistics->GetValue(key, &var))) {
-        start = qint64(var.uhVal.QuadPart / 10000);
-        key.pid = MFNETSOURCE_SEEKRANGEEND_ID;
-        if (SUCCEEDED(m_netsourceStatistics->GetValue(key, &var))) {
-            end = qint64(var.uhVal.QuadPart / 10000);
+    if (m_netsourceStatistics) {
+        PROPVARIANT var;
+        PropVariantInit(&var);
+        PROPERTYKEY key;
+        key.fmtid = MFNETSOURCE_STATISTICS;
+        key.pid = MFNETSOURCE_SEEKRANGESTART_ID;
+        // GetValue returns S_FALSE if the property is not available, which has
+        // a value > 0. We therefore can't use the SUCCEEDED macro here.
+        if (m_netsourceStatistics->GetValue(key, &var) == S_OK) {
+            start = qint64(var.uhVal.QuadPart / 10000);
+            PropVariantClear(&var);
+            PropVariantInit(&var);
+            key.pid = MFNETSOURCE_SEEKRANGEEND_ID;
+            if (m_netsourceStatistics->GetValue(key, &var) == S_OK) {
+                end = qint64(var.uhVal.QuadPart / 10000);
+                PropVariantClear(&var);
+            }
         }
     }
-    PropVariantClear(&var);
+
     return QMediaTimeRange(start, end);
 }
 
@@ -1776,8 +1506,11 @@ HRESULT MFPlayerSession::Invoke(IMFAsyncResult *pResult)
         }
     }
 
-    if (!m_closing)
+    if (!m_closing) {
         emit sessionEvent(pEvent);
+    } else {
+        pEvent->Release();
+    }
     return S_OK;
 }
 
@@ -1785,7 +1518,7 @@ void MFPlayerSession::handleSessionEvent(IMFMediaEvent *sessionEvent)
 {
     HRESULT hrStatus = S_OK;
     HRESULT hr = sessionEvent->GetStatus(&hrStatus);
-    if (FAILED(hr)) {
+    if (FAILED(hr) || !m_session) {
         sessionEvent->Release();
         return;
     }
@@ -1835,14 +1568,18 @@ void MFPlayerSession::handleSessionEvent(IMFMediaEvent *sessionEvent)
             updatePendingCommands(CmdStart);
         break;
     case MESessionStarted:
+        if (m_status == QMediaPlayer::EndOfMedia
+                || m_status == QMediaPlayer::LoadedMedia) {
+            // If the session started, then enough data is buffered to play
+            changeStatus(QMediaPlayer::BufferedMedia);
+        }
+
         updatePendingCommands(CmdStart);
-#ifndef Q_WS_SIMULATOR
         // playback started, we can now set again the procAmpValues if they have been
         // changed previously (these are lost when loading a new media)
         if (m_playerService->videoWindowControl()) {
-            m_playerService->videoWindowControl()->setProcAmpValues();
+            m_playerService->videoWindowControl()->applyImageControls();
         }
-#endif
         break;
     case MESessionStopped:
         if (m_status != QMediaPlayer::EndOfMedia) {
@@ -1850,8 +1587,8 @@ void MFPlayerSession::handleSessionEvent(IMFMediaEvent *sessionEvent)
             m_varStart.hVal.QuadPart = 0;
 
             // Reset to Loaded status unless we are loading a new media
-            // or if the media is buffered (to avoid restarting the video surface)
-            if (m_status != QMediaPlayer::LoadingMedia && m_status != QMediaPlayer::BufferedMedia)
+            // or changing the playback rate to negative values (stop required)
+            if (m_status != QMediaPlayer::LoadingMedia && m_request.command != CmdSeekResume)
                 changeStatus(QMediaPlayer::LoadedMedia);
         }
         updatePendingCommands(CmdStop);
@@ -1894,15 +1631,6 @@ void MFPlayerSession::handleSessionEvent(IMFMediaEvent *sessionEvent)
                 }
             }
 
-            if (SUCCEEDED(MFGetService(m_session, MR_POLICY_VOLUME_SERVICE, IID_PPV_ARGS(&m_volumeControl)))) {
-                m_volumeControl->SetMasterVolume(m_volume * 0.01f);
-                m_volumeControl->SetMute(m_muted);
-            }
-
-            DWORD dwCharacteristics = 0;
-            m_sourceResolver->mediaSource()->GetCharacteristics(&dwCharacteristics);
-            emit seekableUpdate(MFMEDIASOURCE_CAN_SEEK & dwCharacteristics);
-
             // Topology is resolved and successfuly set, this happens only after loading a new media.
             // Make sure we always start the media from the beginning
             m_varStart.vt = VT_I8;
@@ -1920,12 +1648,10 @@ void MFPlayerSession::handleSessionEvent(IMFMediaEvent *sessionEvent)
 
     switch (meType) {
     case MEBufferingStarted:
-        changeStatus(m_status == QMediaPlayer::LoadedMedia ? QMediaPlayer::BufferingMedia : QMediaPlayer::StalledMedia);
+        changeStatus(QMediaPlayer::StalledMedia);
         emit bufferStatusChanged(bufferStatus());
         break;
     case MEBufferingStopped:
-        if (m_status == QMediaPlayer::BufferingMedia)
-            stop(true);
         changeStatus(QMediaPlayer::BufferedMedia);
         emit bufferStatusChanged(bufferStatus());
         break;
@@ -1944,25 +1670,6 @@ void MFPlayerSession::handleSessionEvent(IMFMediaEvent *sessionEvent)
         changeStatus(QMediaPlayer::EndOfMedia);
         break;
     case MEEndOfPresentationSegment:
-        break;
-    case MEAudioSessionVolumeChanged:
-        if (m_volumeControl) {
-            float currentVolume = 1;
-            if (SUCCEEDED(m_volumeControl->GetMasterVolume(&currentVolume))) {
-                int scaledVolume = currentVolume * 100;
-                if (scaledVolume != m_volume) {
-                    m_volume = scaledVolume;
-                    emit volumeChanged(scaledVolume);
-                }
-            }
-            BOOL currentMuted = FALSE;
-            if (SUCCEEDED(m_volumeControl->GetMute(&currentMuted))) {
-                if (currentMuted != BOOL(m_muted)) {
-                    m_muted = bool(currentMuted);
-                    emit mutedChanged(m_muted);
-                }
-            }
-        }
         break;
     case MESessionTopologyStatus: {
             UINT32 status;
@@ -1991,15 +1698,8 @@ void MFPlayerSession::handleSessionEvent(IMFMediaEvent *sessionEvent)
                     }
                     MFGetService(m_session, MFNETSOURCE_STATISTICS_SERVICE, IID_PPV_ARGS(&m_netsourceStatistics));
 
-                    if (!m_netsourceStatistics || bufferStatus() == 100) {
-                        // If the source reader doesn't implement the statistics service, just set the status
-                        // to buffered, since there is no way to query the buffering progress...
-                        changeStatus(QMediaPlayer::BufferedMedia);
-                    } else {
-                        // Start to trigger buffering. Once enough buffering is done, the session will
-                        // be automatically stopped unless the user has explicitly started playback.
-                        start();
-                    }
+                    if (SUCCEEDED(MFGetService(m_session, MR_STREAM_VOLUME_SERVICE, IID_PPV_ARGS(&m_volumeControl))))
+                        setVolumeInternal(m_muted ? 0 : m_volume);
                 }
             }
         }
@@ -2017,10 +1717,17 @@ void MFPlayerSession::updatePendingCommands(Command command)
     if (m_state.command != command || m_pendingState == NoPending)
         return;
 
-    // The current pending command has completed.
+    // Seek while paused completed
     if (m_pendingState == SeekPending && m_state.prevCmd == CmdPause) {
         m_pendingState = NoPending;
-        m_state.setCommand(CmdPause);
+        // A seek operation actually restarts playback. If scrubbing is possible, playback rate
+        // is set to 0.0 at this point and we just need to reset the current state to Pause.
+        // If scrubbing is not possible, the playback rate was not changed and we explicitly need
+        // to re-pause playback.
+        if (!canScrub())
+            pause();
+        else
+            m_state.setCommand(CmdPause);
     }
 
     m_pendingState = NoPending;
@@ -2045,6 +1752,11 @@ void MFPlayerSession::updatePendingCommands(Command command)
         case CmdSeek:
         case CmdSeekResume:
             setPositionInternal(m_request.start, m_request.command);
+            break;
+        case CmdStartAndSeek:
+            start();
+            setPositionInternal(m_request.start, m_request.command);
+            break;
         }
         m_request.setCommand(CmdNone);
     }

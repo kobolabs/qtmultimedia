@@ -1,39 +1,31 @@
 /****************************************************************************
 **
-** Copyright (C) 2013 Digia Plc and/or its subsidiary(-ies).
-** Contact: http://www.qt-project.org/legal
+** Copyright (C) 2015 The Qt Company Ltd.
+** Contact: http://www.qt.io/licensing/
 **
 ** This file is part of the Qt Mobility Components.
 **
-** $QT_BEGIN_LICENSE:LGPL$
+** $QT_BEGIN_LICENSE:LGPL21$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and Digia.  For licensing terms and
-** conditions see http://qt.digia.com/licensing.  For further information
-** use the contact form at http://qt.digia.com/contact-us.
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see http://www.qt.io/terms-conditions. For further
+** information use the contact form at http://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU Lesser General Public License version 2.1 requirements
-** will be met: http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 2.1 or version 3 as published by the Free
+** Software Foundation and appearing in the file LICENSE.LGPLv21 and
+** LICENSE.LGPLv3 included in the packaging of this file. Please review the
+** following information to ensure the GNU Lesser General Public License
+** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
+** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
 **
-** In addition, as a special exception, Digia gives you certain additional
-** rights.  These rights are described in the Digia Qt LGPL Exception
+** As a special exception, The Qt Company gives you certain additional
+** rights. These rights are described in The Qt Company LGPL Exception
 ** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3.0 as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU General Public License version 3.0 requirements will be
-** met: http://www.gnu.org/copyleft/gpl.html.
-**
 **
 ** $QT_END_LICENSE$
 **
@@ -47,12 +39,6 @@
 #include <QtQuick/QQuickView>
 #include "filereader.h"
 #include "trace.h"
-
-#ifdef SMALL_SCREEN_LAYOUT
-    static const QLatin1String MainQmlFile("main-smallscreen.qml");
-#else
-    static const QLatin1String MainQmlFile("main-largescreen.qml");
-#endif
 
 #ifdef PERFORMANCEMONITOR_SUPPORT
 #include "performancemonitordeclarative.h"
@@ -99,7 +85,7 @@ int main(int argc, char *argv[])
 
     QQuickView viewer;
 
-    viewer.setSource(QLatin1String("qrc:///qml/qmlvideofx/") + MainQmlFile);
+    viewer.setSource(QUrl(QLatin1String("qrc:///qml/qmlvideofx/Main.qml")));
     QQuickItem *rootObject = viewer.rootObject();
     rootObject->setProperty("fileName", fileName);
     viewer.rootObject()->setProperty("volume", volume);
@@ -128,13 +114,10 @@ int main(int argc, char *argv[])
     viewer.setTitle("qmlvideofx");
     viewer.setFlags(Qt::Window | Qt::WindowSystemMenuHint | Qt::WindowTitleHint |
                           Qt::WindowMinMaxButtonsHint | Qt::WindowCloseButtonHint);
-    viewer.setMinimumSize(QSize(600, 400));
+    viewer.setMinimumSize(QSize(1280, 720));
+    viewer.setResizeMode(QQuickView::SizeRootObjectToView);
 
-#ifdef SMALL_SCREEN_PHYSICAL
-    viewer.showFullScreen();
-#else
     viewer.show();
-#endif
 
     // Delay invocation of init until the event loop has started, to work around
     // a GL context issue on Harmattan: without this, we get the following error

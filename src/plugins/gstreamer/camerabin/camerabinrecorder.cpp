@@ -1,51 +1,44 @@
 /****************************************************************************
 **
-** Copyright (C) 2013 Digia Plc and/or its subsidiary(-ies).
-** Contact: http://www.qt-project.org/legal
+** Copyright (C) 2015 The Qt Company Ltd.
+** Contact: http://www.qt.io/licensing/
 **
 ** This file is part of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL$
+** $QT_BEGIN_LICENSE:LGPL21$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and Digia.  For licensing terms and
-** conditions see http://qt.digia.com/licensing.  For further information
-** use the contact form at http://qt.digia.com/contact-us.
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see http://www.qt.io/terms-conditions. For further
+** information use the contact form at http://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU Lesser General Public License version 2.1 requirements
-** will be met: http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 2.1 or version 3 as published by the Free
+** Software Foundation and appearing in the file LICENSE.LGPLv21 and
+** LICENSE.LGPLv3 included in the packaging of this file. Please review the
+** following information to ensure the GNU Lesser General Public License
+** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
+** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
 **
-** In addition, as a special exception, Digia gives you certain additional
-** rights.  These rights are described in the Digia Qt LGPL Exception
+** As a special exception, The Qt Company gives you certain additional
+** rights. These rights are described in The Qt Company LGPL Exception
 ** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3.0 as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU General Public License version 3.0 requirements will be
-** met: http://www.gnu.org/copyleft/gpl.html.
-**
 **
 ** $QT_END_LICENSE$
 **
 ****************************************************************************/
 
 #include "camerabinrecorder.h"
+#include "camerabincontrol.h"
+#include "camerabinresourcepolicy.h"
 #include "camerabinaudioencoder.h"
 #include "camerabinvideoencoder.h"
 #include "camerabincontainer.h"
 #include <QtCore/QDebug>
 
-#include <gst/pbutils/encoding-profile.h>
 
 QT_BEGIN_NAMESPACE
 
@@ -55,12 +48,14 @@ CameraBinRecorder::CameraBinRecorder(CameraBinSession *session)
      m_state(QMediaRecorder::StoppedState),
      m_status(QMediaRecorder::UnloadedStatus)
 {
-    connect(m_session, SIGNAL(stateChanged(QCamera::State)), SLOT(updateStatus()));
+    connect(m_session, SIGNAL(statusChanged(QCamera::Status)), SLOT(updateStatus()));
     connect(m_session, SIGNAL(pendingStateChanged(QCamera::State)), SLOT(updateStatus()));
     connect(m_session, SIGNAL(busyChanged(bool)), SLOT(updateStatus()));
 
     connect(m_session, SIGNAL(durationChanged(qint64)), SIGNAL(durationChanged(qint64)));
     connect(m_session, SIGNAL(mutedChanged(bool)), this, SIGNAL(mutedChanged(bool)));
+    connect(m_session->cameraControl()->resourcePolicy(), SIGNAL(canCaptureChanged()),
+            this, SLOT(updateStatus()));
 }
 
 CameraBinRecorder::~CameraBinRecorder()
@@ -90,15 +85,19 @@ QMediaRecorder::Status CameraBinRecorder::status() const
 
 void CameraBinRecorder::updateStatus()
 {
-    QCamera::State sessionState = m_session->state();
+    QCamera::Status sessionStatus = m_session->status();
 
     QMediaRecorder::State oldState = m_state;
     QMediaRecorder::Status oldStatus = m_status;
 
-    if (sessionState == QCamera::ActiveState &&
+    if (sessionStatus == QCamera::ActiveStatus &&
             m_session->captureMode().testFlag(QCamera::CaptureVideo)) {
 
-        if (m_state == QMediaRecorder::RecordingState) {
+        if (!m_session->cameraControl()->resourcePolicy()->canCapture()) {
+            m_status = QMediaRecorder::UnavailableStatus;
+            m_state = QMediaRecorder::StoppedState;
+            m_session->stopVideoRecording();
+        } else  if (m_state == QMediaRecorder::RecordingState) {
             m_status = QMediaRecorder::RecordingStatus;
         } else {
             m_status = m_session->isBusy() ?
@@ -110,9 +109,10 @@ void CameraBinRecorder::updateStatus()
             m_state = QMediaRecorder::StoppedState;
             m_session->stopVideoRecording();
         }
-        m_status = m_session->pendingState() == QCamera::ActiveState ?
-                    QMediaRecorder::LoadingStatus :
-                    QMediaRecorder::UnloadedStatus;
+        m_status = m_session->pendingState() == QCamera::ActiveState
+                    && m_session->captureMode().testFlag(QCamera::CaptureVideo)
+                ? QMediaRecorder::LoadingStatus
+                : QMediaRecorder::UnloadedStatus;
     }
 
     if (m_state != oldState)
@@ -130,6 +130,7 @@ qint64 CameraBinRecorder::duration() const
 
 void CameraBinRecorder::applySettings()
 {
+#ifdef HAVE_GST_ENCODING_PROFILES
     CameraBinContainer *containerControl = m_session->mediaContainerControl();
     CameraBinAudioEncoder *audioEncoderControl = m_session->audioEncodeControl();
     CameraBinVideoEncoder *videoEncoderControl = m_session->videoEncodeControl();
@@ -161,8 +162,6 @@ void CameraBinRecorder::applySettings()
 
                 QVideoEncoderSettings videoSettings = videoEncoderControl->videoSettings();
                 videoSettings.setCodec(candidate[1]);
-                if (videoSettings.resolution().isEmpty())
-                    videoSettings.setResolution(640, 480);
                 videoEncoderControl->setActualVideoSettings(videoSettings);
 
                 QAudioEncoderSettings audioSettings = audioEncoderControl->audioSettings();
@@ -173,7 +172,10 @@ void CameraBinRecorder::applySettings()
             }
         }
     }
+#endif
 }
+
+#ifdef HAVE_GST_ENCODING_PROFILES
 
 GstEncodingContainerProfile *CameraBinRecorder::videoProfile()
 {
@@ -183,12 +185,20 @@ GstEncodingContainerProfile *CameraBinRecorder::videoProfile()
         GstEncodingProfile *audioProfile = m_session->audioEncodeControl()->createProfile();
         GstEncodingProfile *videoProfile = m_session->videoEncodeControl()->createProfile();
 
-        gst_encoding_container_profile_add_profile(containerProfile, audioProfile);
-        gst_encoding_container_profile_add_profile(containerProfile, videoProfile);
+        if (audioProfile) {
+            if (!gst_encoding_container_profile_add_profile(containerProfile, audioProfile))
+                gst_encoding_profile_unref(audioProfile);
+        }
+        if (videoProfile) {
+            if (!gst_encoding_container_profile_add_profile(containerProfile, videoProfile))
+                gst_encoding_profile_unref(videoProfile);
+        }
     }
 
     return containerProfile;
 }
+
+#endif
 
 void CameraBinRecorder::setState(QMediaRecorder::State state)
 {
@@ -208,13 +218,16 @@ void CameraBinRecorder::setState(QMediaRecorder::State state)
         emit error(QMediaRecorder::ResourceError, tr("QMediaRecorder::pause() is not supported by camerabin2."));
         break;
     case QMediaRecorder::RecordingState:
-        if (m_session->state() == QCamera::ActiveState) {
+
+        if (m_session->status() != QCamera::ActiveStatus) {
+            emit error(QMediaRecorder::ResourceError, tr("Service has not been started"));
+        } else if (!m_session->cameraControl()->resourcePolicy()->canCapture()) {
+            emit error(QMediaRecorder::ResourceError, tr("Recording permissions are not available"));
+        } else {
             m_session->recordVideo();
             m_state = state;
             m_status = QMediaRecorder::RecordingStatus;
             emit actualLocationChanged(m_session->outputLocation());
-        } else {
-            emit error(QMediaRecorder::ResourceError, tr("Service has not been started"));
         }
     }
 

@@ -1,39 +1,31 @@
 /****************************************************************************
 **
-** Copyright (C) 2013 Digia Plc and/or its subsidiary(-ies).
-** Contact: http://www.qt-project.org/legal
+** Copyright (C) 2015 The Qt Company Ltd.
+** Contact: http://www.qt.io/licensing/
 **
 ** This file is part of the plugins of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL$
+** $QT_BEGIN_LICENSE:LGPL21$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and Digia.  For licensing terms and
-** conditions see http://qt.digia.com/licensing.  For further information
-** use the contact form at http://qt.digia.com/contact-us.
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see http://www.qt.io/terms-conditions. For further
+** information use the contact form at http://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU Lesser General Public License version 2.1 requirements
-** will be met: http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 2.1 or version 3 as published by the Free
+** Software Foundation and appearing in the file LICENSE.LGPLv21 and
+** LICENSE.LGPLv3 included in the packaging of this file. Please review the
+** following information to ensure the GNU Lesser General Public License
+** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
+** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
 **
-** In addition, as a special exception, Digia gives you certain additional
-** rights.  These rights are described in the Digia Qt LGPL Exception
+** As a special exception, The Qt Company gives you certain additional
+** rights. These rights are described in The Qt Company LGPL Exception
 ** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3.0 as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU General Public License version 3.0 requirements will be
-** met: http://www.gnu.org/copyleft/gpl.html.
-**
 **
 ** $QT_END_LICENSE$
 **
@@ -57,6 +49,7 @@
 #include "qdeclarativecamerarecorder_p.h"
 
 #include <qcamera.h>
+#include <qcamerainfo.h>
 #include <qcameraimageprocessing.h>
 #include <qcameraimagecapture.h>
 
@@ -64,6 +57,7 @@
 #include <QtCore/qdatetime.h>
 #include <QtQml/qqmlparserstatus.h>
 #include <QtQml/qqml.h>
+#include <QtQml/qjsvalue.h>
 
 QT_BEGIN_NAMESPACE
 
@@ -71,11 +65,18 @@ class QDeclarativeCameraExposure;
 class QDeclarativeCameraFocus;
 class QDeclarativeCameraFlash;
 class QDeclarativeCameraImageProcessing;
+class QDeclarativeMediaMetaData;
+class QDeclarativeCameraViewfinder;
 
 class QDeclarativeCamera : public QObject, public QQmlParserStatus
 {
     Q_OBJECT
     Q_INTERFACES(QQmlParserStatus)
+
+    Q_PROPERTY(QString deviceId READ deviceId WRITE setDeviceId NOTIFY deviceIdChanged REVISION 1)
+    Q_PROPERTY(Position position READ position WRITE setPosition NOTIFY positionChanged REVISION 1)
+    Q_PROPERTY(QString displayName READ displayName NOTIFY displayNameChanged REVISION 1)
+    Q_PROPERTY(int orientation READ orientation NOTIFY orientationChanged REVISION 1)
 
     Q_PROPERTY(CaptureMode captureMode READ captureMode WRITE setCaptureMode NOTIFY captureModeChanged)
     Q_PROPERTY(State cameraState READ cameraState WRITE setCameraState NOTIFY cameraStateChanged)
@@ -98,7 +99,10 @@ class QDeclarativeCamera : public QObject, public QQmlParserStatus
     Q_PROPERTY(QDeclarativeCameraFlash* flash READ flash CONSTANT)
     Q_PROPERTY(QDeclarativeCameraFocus* focus READ focus CONSTANT)
     Q_PROPERTY(QDeclarativeCameraImageProcessing* imageProcessing READ imageProcessing CONSTANT)
+    Q_PROPERTY(QDeclarativeMediaMetaData *metaData READ metaData CONSTANT REVISION 1)
+    Q_PROPERTY(QDeclarativeCameraViewfinder *viewfinder READ viewfinder CONSTANT REVISION 1)
 
+    Q_ENUMS(Position)
     Q_ENUMS(CaptureMode)
     Q_ENUMS(State)
     Q_ENUMS(Status)
@@ -115,6 +119,12 @@ class QDeclarativeCamera : public QObject, public QQmlParserStatus
     Q_ENUMS(Availability)
 
 public:
+    enum Position {
+        UnspecifiedPosition = QCamera::UnspecifiedPosition,
+        BackFace = QCamera::BackFace,
+        FrontFace = QCamera::FrontFace
+    };
+
     enum CaptureMode {
         CaptureViewfinder = QCamera::CaptureViewfinder,
         CaptureStillImage = QCamera::CaptureStillImage,
@@ -182,6 +192,16 @@ public:
         ExposureBeach = QCameraExposure::ExposureBeach,
         ExposureLargeAperture = QCameraExposure::ExposureLargeAperture,
         ExposureSmallAperture = QCameraExposure::ExposureSmallAperture,
+        ExposureAction = QCameraExposure::ExposureAction,
+        ExposureLandscape = QCameraExposure::ExposureLandscape,
+        ExposureNightPortrait = QCameraExposure::ExposureNightPortrait,
+        ExposureTheatre = QCameraExposure::ExposureTheatre,
+        ExposureSunset = QCameraExposure::ExposureSunset,
+        ExposureSteadyPhoto = QCameraExposure::ExposureSteadyPhoto,
+        ExposureFireworks = QCameraExposure::ExposureFireworks,
+        ExposureParty = QCameraExposure::ExposureParty,
+        ExposureCandlelight = QCameraExposure::ExposureCandlelight,
+        ExposureBarcode = QCameraExposure::ExposureBarcode,
         ExposureModeVendor = QCameraExposure::ExposureModeVendor
     };
 
@@ -231,6 +251,18 @@ public:
     QDeclarativeCameraFlash *flash() { return m_flash; }
     QDeclarativeCameraFocus *focus() { return m_focus; }
     QDeclarativeCameraImageProcessing *imageProcessing() { return m_imageProcessing; }
+    QDeclarativeCameraViewfinder *viewfinder();
+
+    QDeclarativeMediaMetaData *metaData();
+
+    QString deviceId() const;
+    void setDeviceId(const QString &name);
+
+    Position position() const;
+    void setPosition(Position position);
+
+    QString displayName() const;
+    int orientation() const;
 
     CaptureMode captureMode() const;
     State cameraState() const;
@@ -263,9 +295,19 @@ public Q_SLOTS:
     void setOpticalZoom(qreal);
     void setDigitalZoom(qreal);
 
+    Q_REVISION(2) QJSValue supportedViewfinderResolutions(qreal minimumFrameRate = 0.0,
+                                                          qreal maximumFrameRate = 0.0);
+
+    Q_REVISION(2) QJSValue supportedViewfinderFrameRateRanges(const QJSValue &resolution = QJSValue());
+
 Q_SIGNALS:
     void errorChanged();
     void error(QDeclarativeCamera::Error errorCode, const QString &errorString);
+
+    Q_REVISION(1) void deviceIdChanged();
+    Q_REVISION(1) void positionChanged();
+    Q_REVISION(1) void displayNameChanged();
+    Q_REVISION(1) void orientationChanged();
 
     void captureModeChanged();
     void cameraStateChanged(QDeclarativeCamera::State);
@@ -293,7 +335,10 @@ protected:
 
 private:
     Q_DISABLE_COPY(QDeclarativeCamera)
+    void setupDevice(const QString &deviceName);
+
     QCamera *m_camera;
+    QCameraInfo m_currentCameraInfo;
 
     QDeclarativeCameraCapture *m_imageCapture;
     QDeclarativeCameraRecorder *m_videoRecorder;
@@ -301,6 +346,8 @@ private:
     QDeclarativeCameraFlash *m_flash;
     QDeclarativeCameraFocus *m_focus;
     QDeclarativeCameraImageProcessing *m_imageProcessing;
+    QDeclarativeMediaMetaData *m_metaData;
+    QDeclarativeCameraViewfinder *m_viewfinder;
 
     State m_pendingState;
     bool m_componentComplete;

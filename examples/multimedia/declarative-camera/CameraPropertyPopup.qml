@@ -1,7 +1,7 @@
 /****************************************************************************
 **
-** Copyright (C) 2013 Digia Plc and/or its subsidiary(-ies).
-** Contact: http://www.qt-project.org/legal
+** Copyright (C) 2015 The Qt Company Ltd.
+** Contact: http://www.qt.io/licensing/
 **
 ** This file is part of the examples of the Qt Toolkit.
 **
@@ -17,8 +17,8 @@
 **     notice, this list of conditions and the following disclaimer in
 **     the documentation and/or other materials provided with the
 **     distribution.
-**   * Neither the name of Digia Plc and its Subsidiary(-ies) nor the names
-**     of its contributors may be used to endorse or promote products derived
+**   * Neither the name of The Qt Company Ltd nor the names of its
+**     contributors may be used to endorse or promote products derived
 **     from this software without specific prior written permission.
 **
 **
@@ -40,7 +40,7 @@
 
 import QtQuick 2.0
 
-Rectangle {
+Popup {
     id: propertyPopup
 
     property alias model : view.model
@@ -53,12 +53,6 @@ Rectangle {
 
     width: columns*itemWidth + view.anchors.margins*2
     height: Math.ceil(model.count/columns)*itemHeight + view.anchors.margins*2 + 25
-
-    radius: 5
-    border.color: "#000000"
-    border.width: 2
-    smooth: true
-    color: "#5e5e5e"
 
     signal selected
 

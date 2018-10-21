@@ -8,6 +8,10 @@ TEMPLATE = subdirs
 
 SUBDIRS += m3u
 
+qtHaveModule(quick) {
+   SUBDIRS += videonode
+}
+
 android {
    SUBDIRS += android opensles
 }
@@ -21,13 +25,16 @@ qnx:!blackberry {
     SUBDIRS += qnx-audio
 }
 
-win32 {
-    SUBDIRS += audiocapture
-}
+win32:!winrt {
+    SUBDIRS += audiocapture \
+               windowsaudio
 
-win32 {
     config_directshow: SUBDIRS += directshow
     config_wmf: SUBDIRS += wmf
+}
+
+winrt {
+    SUBDIRS += winrt
 }
 
 unix:!mac:!android {
@@ -37,20 +44,19 @@ unix:!mac:!android {
         SUBDIRS += audiocapture
     }
 
-    # v4l is turned off because it is not supported in Qt 5
-    # !maemo*:SUBDIRS += v4l
+    config_pulseaudio: SUBDIRS += pulseaudio
+    config_alsa: SUBDIRS += alsa
 
-    config_pulseaudio {
-        SUBDIRS += pulseaudio
-    }
+    # v4l is turned off because it is not supported in Qt 5
+    # config_linux_v4l {
+    #     !maemo*:SUBDIRS += v4l
+    # }
 }
 
 mac:!simulator {
     SUBDIRS += audiocapture coreaudio
 
     config_avfoundation: SUBDIRS += avfoundation
-
-    !ios: SUBDIRS += qt7
 }
 
 config_resourcepolicy {

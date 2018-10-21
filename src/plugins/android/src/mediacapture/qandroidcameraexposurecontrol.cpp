@@ -1,39 +1,31 @@
 /****************************************************************************
 **
-** Copyright (C) 2013 Digia Plc and/or its subsidiary(-ies).
-** Contact: http://www.qt-project.org/legal
+** Copyright (C) 2015 The Qt Company Ltd.
+** Contact: http://www.qt.io/licensing/
 **
 ** This file is part of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL$
+** $QT_BEGIN_LICENSE:LGPL21$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and Digia.  For licensing terms and
-** conditions see http://qt.digia.com/licensing.  For further information
-** use the contact form at http://qt.digia.com/contact-us.
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see http://www.qt.io/terms-conditions. For further
+** information use the contact form at http://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU Lesser General Public License version 2.1 requirements
-** will be met: http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 2.1 or version 3 as published by the Free
+** Software Foundation and appearing in the file LICENSE.LGPLv21 and
+** LICENSE.LGPLv3 included in the packaging of this file. Please review the
+** following information to ensure the GNU Lesser General Public License
+** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
+** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
 **
-** In addition, as a special exception, Digia gives you certain additional
-** rights.  These rights are described in the Digia Qt LGPL Exception
+** As a special exception, The Qt Company gives you certain additional
+** rights. These rights are described in The Qt Company LGPL Exception
 ** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3.0 as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU General Public License version 3.0 requirements will be
-** met: http://www.gnu.org/copyleft/gpl.html.
-**
 **
 ** $QT_END_LICENSE$
 **
@@ -42,7 +34,7 @@
 #include "qandroidcameraexposurecontrol.h"
 
 #include "qandroidcamerasession.h"
-#include "jcamera.h"
+#include "androidcamera.h"
 
 QT_BEGIN_NAMESPACE
 
@@ -63,6 +55,9 @@ QAndroidCameraExposureControl::QAndroidCameraExposureControl(QAndroidCameraSessi
 
 bool QAndroidCameraExposureControl::isParameterSupported(ExposureParameter parameter) const
 {
+    if (!m_session->camera())
+        return false;
+
     switch (parameter) {
     case QCameraExposureControl::ISO:
         return false;
@@ -71,7 +66,7 @@ bool QAndroidCameraExposureControl::isParameterSupported(ExposureParameter param
     case QCameraExposureControl::ShutterSpeed:
         return false;
     case QCameraExposureControl::ExposureCompensation:
-        return true;
+        return !m_supportedExposureCompensations.isEmpty();
     case QCameraExposureControl::FlashPower:
         return false;
     case QCameraExposureControl::FlashCompensation:
@@ -81,7 +76,7 @@ bool QAndroidCameraExposureControl::isParameterSupported(ExposureParameter param
     case QCameraExposureControl::SpotMeteringPoint:
         return false;
     case QCameraExposureControl::ExposureMode:
-        return true;
+        return !m_supportedExposureModes.isEmpty();
     case QCameraExposureControl::MeteringMode:
         return false;
     default:
@@ -127,27 +122,41 @@ QVariant QAndroidCameraExposureControl::actualValue(ExposureParameter parameter)
 
 bool QAndroidCameraExposureControl::setValue(ExposureParameter parameter, const QVariant& value)
 {
-    if (!m_session->camera() || !value.isValid())
+    if (!value.isValid())
         return false;
 
     if (parameter == QCameraExposureControl::ExposureCompensation) {
-        m_requestedExposureCompensation = value.toReal();
-        emit requestedValueChanged(QCameraExposureControl::ExposureCompensation);
+        qreal expComp = value.toReal();
+        if (!qFuzzyCompare(m_requestedExposureCompensation, expComp)) {
+            m_requestedExposureCompensation = expComp;
+            emit requestedValueChanged(QCameraExposureControl::ExposureCompensation);
+        }
+
+        if (!m_session->camera())
+            return true;
 
         int expCompIndex = qRound(m_requestedExposureCompensation / m_exposureCompensationStep);
         if (expCompIndex >= m_minExposureCompensationIndex
                 && expCompIndex <= m_maxExposureCompensationIndex) {
+            qreal comp = expCompIndex * m_exposureCompensationStep;
             m_session->camera()->setExposureCompensation(expCompIndex);
-
-            m_actualExposureCompensation = expCompIndex * m_exposureCompensationStep;
-            emit actualValueChanged(QCameraExposureControl::ExposureCompensation);
+            if (!qFuzzyCompare(m_actualExposureCompensation, comp)) {
+                m_actualExposureCompensation = expCompIndex * m_exposureCompensationStep;
+                emit actualValueChanged(QCameraExposureControl::ExposureCompensation);
+            }
 
             return true;
         }
 
     } else if (parameter == QCameraExposureControl::ExposureMode) {
-        m_requestedExposureMode = value.value<QCameraExposure::ExposureMode>();
-        emit requestedValueChanged(QCameraExposureControl::ExposureMode);
+        QCameraExposure::ExposureMode expMode = value.value<QCameraExposure::ExposureMode>();
+        if (m_requestedExposureMode != expMode) {
+            m_requestedExposureMode = expMode;
+            emit requestedValueChanged(QCameraExposureControl::ExposureMode);
+        }
+
+        if (!m_session->camera())
+            return true;
 
         if (!m_supportedExposureModes.isEmpty()) {
             m_actualExposureMode = m_requestedExposureMode;
@@ -172,6 +181,36 @@ bool QAndroidCameraExposureControl::setValue(ExposureParameter parameter, const 
             case QCameraExposure::ExposureNight:
                 sceneMode = QLatin1String("night");
                 break;
+            case QCameraExposure::ExposureAction:
+                sceneMode = QLatin1String("action");
+                break;
+            case QCameraExposure::ExposureLandscape:
+                sceneMode = QLatin1String("landscape");
+                break;
+            case QCameraExposure::ExposureNightPortrait:
+                sceneMode = QLatin1String("night-portrait");
+                break;
+            case QCameraExposure::ExposureTheatre:
+                sceneMode = QLatin1String("theatre");
+                break;
+            case QCameraExposure::ExposureSunset:
+                sceneMode = QLatin1String("sunset");
+                break;
+            case QCameraExposure::ExposureSteadyPhoto:
+                sceneMode = QLatin1String("steadyphoto");
+                break;
+            case QCameraExposure::ExposureFireworks:
+                sceneMode = QLatin1String("fireworks");
+                break;
+            case QCameraExposure::ExposureParty:
+                sceneMode = QLatin1String("party");
+                break;
+            case QCameraExposure::ExposureCandlelight:
+                sceneMode = QLatin1String("candlelight");
+                break;
+            case QCameraExposure::ExposureBarcode:
+                sceneMode = QLatin1String("barcode");
+                break;
             default:
                 sceneMode = QLatin1String("auto");
                 m_actualExposureMode = QCameraExposure::ExposureAuto;
@@ -190,38 +229,59 @@ bool QAndroidCameraExposureControl::setValue(ExposureParameter parameter, const 
 
 void QAndroidCameraExposureControl::onCameraOpened()
 {
-    m_requestedExposureCompensation = m_actualExposureCompensation = 0.0;
-    m_requestedExposureMode = m_actualExposureMode = QCameraExposure::ExposureAuto;
-    emit requestedValueChanged(QCameraExposureControl::ExposureCompensation);
-    emit actualValueChanged(QCameraExposureControl::ExposureCompensation);
-    emit requestedValueChanged(QCameraExposureControl::ExposureMode);
-    emit actualValueChanged(QCameraExposureControl::ExposureMode);
-
+    m_supportedExposureCompensations.clear();
     m_minExposureCompensationIndex = m_session->camera()->getMinExposureCompensation();
     m_maxExposureCompensationIndex = m_session->camera()->getMaxExposureCompensation();
     m_exposureCompensationStep = m_session->camera()->getExposureCompensationStep();
-    for (int i = m_minExposureCompensationIndex; i <= m_maxExposureCompensationIndex; ++i)
-        m_supportedExposureCompensations.append(i * m_exposureCompensationStep);
-    emit parameterRangeChanged(QCameraExposureControl::ExposureCompensation);
+    if (m_minExposureCompensationIndex != 0 || m_maxExposureCompensationIndex != 0) {
+        for (int i = m_minExposureCompensationIndex; i <= m_maxExposureCompensationIndex; ++i)
+            m_supportedExposureCompensations.append(i * m_exposureCompensationStep);
+        emit parameterRangeChanged(QCameraExposureControl::ExposureCompensation);
+    }
 
     m_supportedExposureModes.clear();
     QStringList sceneModes = m_session->camera()->getSupportedSceneModes();
-    for (int i = 0; i < sceneModes.size(); ++i) {
-        const QString &sceneMode = sceneModes.at(i);
-        if (sceneMode == QLatin1String("auto"))
-            m_supportedExposureModes << QVariant::fromValue(QCameraExposure::ExposureAuto);
-        else if (sceneMode == QLatin1String("beach"))
-            m_supportedExposureModes << QVariant::fromValue(QCameraExposure::ExposureBeach);
-        else if (sceneMode == QLatin1String("night"))
-            m_supportedExposureModes << QVariant::fromValue(QCameraExposure::ExposureNight);
-        else if (sceneMode == QLatin1String("portrait"))
-            m_supportedExposureModes << QVariant::fromValue(QCameraExposure::ExposurePortrait);
-        else if (sceneMode == QLatin1String("snow"))
-            m_supportedExposureModes << QVariant::fromValue(QCameraExposure::ExposureSnow);
-        else if (sceneMode == QLatin1String("sports"))
-            m_supportedExposureModes << QVariant::fromValue(QCameraExposure::ExposureSports);
+    if (!sceneModes.isEmpty()) {
+        for (int i = 0; i < sceneModes.size(); ++i) {
+            const QString &sceneMode = sceneModes.at(i);
+            if (sceneMode == QLatin1String("auto"))
+                m_supportedExposureModes << QVariant::fromValue(QCameraExposure::ExposureAuto);
+            else if (sceneMode == QLatin1String("beach"))
+                m_supportedExposureModes << QVariant::fromValue(QCameraExposure::ExposureBeach);
+            else if (sceneMode == QLatin1String("night"))
+                m_supportedExposureModes << QVariant::fromValue(QCameraExposure::ExposureNight);
+            else if (sceneMode == QLatin1String("portrait"))
+                m_supportedExposureModes << QVariant::fromValue(QCameraExposure::ExposurePortrait);
+            else if (sceneMode == QLatin1String("snow"))
+                m_supportedExposureModes << QVariant::fromValue(QCameraExposure::ExposureSnow);
+            else if (sceneMode == QLatin1String("sports"))
+                m_supportedExposureModes << QVariant::fromValue(QCameraExposure::ExposureSports);
+            else if (sceneMode == QLatin1String("action"))
+                m_supportedExposureModes << QVariant::fromValue(QCameraExposure::ExposureAction);
+            else if (sceneMode == QLatin1String("landscape"))
+                m_supportedExposureModes << QVariant::fromValue(QCameraExposure::ExposureLandscape);
+            else if (sceneMode == QLatin1String("night-portrait"))
+                m_supportedExposureModes << QVariant::fromValue(QCameraExposure::ExposureNightPortrait);
+            else if (sceneMode == QLatin1String("theatre"))
+                m_supportedExposureModes << QVariant::fromValue(QCameraExposure::ExposureTheatre);
+            else if (sceneMode == QLatin1String("sunset"))
+                m_supportedExposureModes << QVariant::fromValue(QCameraExposure::ExposureSunset);
+            else if (sceneMode == QLatin1String("steadyphoto"))
+                m_supportedExposureModes << QVariant::fromValue(QCameraExposure::ExposureSteadyPhoto);
+            else if (sceneMode == QLatin1String("fireworks"))
+                m_supportedExposureModes << QVariant::fromValue(QCameraExposure::ExposureFireworks);
+            else if (sceneMode == QLatin1String("party"))
+                m_supportedExposureModes << QVariant::fromValue(QCameraExposure::ExposureParty);
+            else if (sceneMode == QLatin1String("candlelight"))
+                m_supportedExposureModes << QVariant::fromValue(QCameraExposure::ExposureCandlelight);
+            else if (sceneMode == QLatin1String("barcode"))
+                m_supportedExposureModes << QVariant::fromValue(QCameraExposure::ExposureBarcode);
+        }
+        emit parameterRangeChanged(QCameraExposureControl::ExposureMode);
     }
-    emit parameterRangeChanged(QCameraExposureControl::ExposureMode);
+
+    setValue(QCameraExposureControl::ExposureCompensation, QVariant::fromValue(m_requestedExposureCompensation));
+    setValue(QCameraExposureControl::ExposureMode, QVariant::fromValue(m_requestedExposureMode));
 }
 
 QT_END_NAMESPACE

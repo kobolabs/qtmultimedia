@@ -1,49 +1,41 @@
 /****************************************************************************
 **
-** Copyright (C) 2013 Digia Plc and/or its subsidiary(-ies).
-** Contact: http://www.qt-project.org/legal
+** Copyright (C) 2015 The Qt Company Ltd.
+** Contact: http://www.qt.io/licensing/
 **
 ** This file is part of the Qt Mobility Components.
 **
-** $QT_BEGIN_LICENSE:LGPL$
+** $QT_BEGIN_LICENSE:LGPL21$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and Digia.  For licensing terms and
-** conditions see http://qt.digia.com/licensing.  For further information
-** use the contact form at http://qt.digia.com/contact-us.
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see http://www.qt.io/terms-conditions. For further
+** information use the contact form at http://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU Lesser General Public License version 2.1 requirements
-** will be met: http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 2.1 or version 3 as published by the Free
+** Software Foundation and appearing in the file LICENSE.LGPLv21 and
+** LICENSE.LGPLv3 included in the packaging of this file. Please review the
+** following information to ensure the GNU Lesser General Public License
+** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
+** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
 **
-** In addition, as a special exception, Digia gives you certain additional
-** rights.  These rights are described in the Digia Qt LGPL Exception
+** As a special exception, The Qt Company gives you certain additional
+** rights. These rights are described in The Qt Company LGPL Exception
 ** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3.0 as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU General Public License version 3.0 requirements will be
-** met: http://www.gnu.org/copyleft/gpl.html.
-**
 **
 ** $QT_END_LICENSE$
 **
 ****************************************************************************/
 
 #include "mfvideorenderercontrol.h"
-#include "mfglobal.h"
-#ifdef QT_OPENGL_ES_2_ANGLE
+#include "mfactivate.h"
+
 #include "evrcustompresenter.h"
-#endif
+
 #include <qabstractvideosurface.h>
 #include <qvideosurfaceformat.h>
 #include <qtcore/qtimer.h>
@@ -53,6 +45,7 @@
 #include <qtcore/qthread.h>
 #include "guiddef.h"
 #include <qtcore/qdebug.h>
+#include <QtMultimedia/private/qmediaopenglhelper_p.h>
 
 //#define DEBUG_MEDIAFOUNDATION
 #define PAD_TO_DWORD(x)  (((x) + 3) & ~3)
@@ -257,6 +250,7 @@ namespace
             , m_bufferStartTime(-1)
             , m_bufferDuration(-1)
             , m_presentationClock(0)
+            , m_sampleRequested(false)
             , m_currentMediaType(0)
             , m_prerolling(false)
             , m_prerollTargetTime(0)
@@ -571,6 +565,18 @@ namespace
                         QVideoSurfaceFormat format(QSize(width, height), m_pixelFormats[index]);
                         m_surfaceFormat = format;
 
+                        MFVideoArea viewport;
+                        if (SUCCEEDED(pMediaType->GetBlob(MF_MT_GEOMETRIC_APERTURE,
+                                                          reinterpret_cast<UINT8*>(&viewport),
+                                                          sizeof(MFVideoArea),
+                                                          NULL))) {
+
+                            m_surfaceFormat.setViewport(QRect(viewport.OffsetX.value,
+                                                              viewport.OffsetY.value,
+                                                              viewport.Area.cx,
+                                                              viewport.Area.cy));
+                        }
+
                         if (FAILED(pMediaType->GetUINT32(MF_MT_DEFAULT_STRIDE, (UINT32*)&m_bytesPerLine))) {
                             m_bytesPerLine = getBytesPerLine(format);
                         }
@@ -654,11 +660,6 @@ namespace
                 m_presentationClock = NULL;
             }
 
-            if (m_scheduledBuffer) {
-                m_scheduledBuffer->Release();
-                m_scheduledBuffer = NULL;
-            }
-
             clearMediaTypes();
             clearSampleQueue();
             clearBufferCache();
@@ -676,6 +677,7 @@ namespace
             QMutexLocker locker(&m_mutex);
             HRESULT hr = validateOperation(OpPreroll);
             if (SUCCEEDED(hr)) {
+                m_state = State_Prerolling;
                 m_prerollTargetTime = hnsUpcomingStartTime;
                 hr = queueAsyncOperation(OpPreroll);
             }
@@ -771,9 +773,12 @@ namespace
             qDebug() << "MediaStream::setRate" << rate;
 #endif
             QMutexLocker locker(&m_mutex);
-            m_rate = rate;
-            queueEvent(MEStreamSinkRateChanged, GUID_NULL, S_OK, NULL);
-            return S_OK;
+            HRESULT hr = validateOperation(OpSetRate);
+            if (SUCCEEDED(hr)) {
+                m_rate = rate;
+                hr = queueAsyncOperation(OpSetRate);
+            }
+            return hr;
         }
 
         void supportedFormatsChanged()
@@ -802,7 +807,7 @@ namespace
                     case QVideoFrame::Format_RGB32:
                         mediaType->SetGUID(MF_MT_SUBTYPE, MFVideoFormat_RGB32);
                         break;
-                    case QVideoFrame::Format_RGB24:
+                    case QVideoFrame::Format_BGR24: // MFVideoFormat_RGB24 has a BGR layout
                         mediaType->SetGUID(MF_MT_SUBTYPE, MFVideoFormat_RGB24);
                         break;
                     case QVideoFrame::Format_RGB565:
@@ -831,8 +836,11 @@ namespace
                         mediaType->Release();
                         continue;
                 }
-                m_pixelFormats.push_back(format);
-                m_mediaTypes.push_back(mediaType);
+                // QAbstractVideoSurface::supportedPixelFormats() returns formats in descending
+                // order of preference, while IMFMediaTypeHandler is supposed to return supported
+                // formats in ascending order of preference. We need to reverse the list.
+                m_pixelFormats.prepend(format);
+                m_mediaTypes.prepend(mediaType);
             }
         }
 
@@ -854,6 +862,16 @@ namespace
                 schedulePresentation(true);
         }
 
+        void clearScheduledFrame()
+        {
+            QMutexLocker locker(&m_mutex);
+            if (m_scheduledBuffer) {
+                m_scheduledBuffer->Release();
+                m_scheduledBuffer = NULL;
+                schedulePresentation(true);
+            }
+        }
+
         enum
         {
             StartSurface = QEvent::User,
@@ -871,7 +889,7 @@ namespace
             {
             }
 
-            int targetTime()
+            MFTIME targetTime()
             {
                 return m_time;
             }
@@ -923,6 +941,7 @@ namespace
         {
             State_TypeNotSet = 0,    // No media type is set
             State_Ready,             // Media type is set, Start has never been called.
+            State_Prerolling,
             State_Started,
             State_Paused,
             State_Stopped,
@@ -1060,6 +1079,7 @@ namespace
                 return format.frameWidth() * 4;
             // 24 bpp packed formats.
             case QVideoFrame::Format_RGB24:
+            case QVideoFrame::Format_BGR24:
                 return PAD_TO_DWORD(format.frameWidth() * 3);
             // 16 bpp packed formats.
             case QVideoFrame::Format_RGB565:
@@ -1085,6 +1105,9 @@ namespace
         HRESULT onDispatchWorkItem(IMFAsyncResult* pAsyncResult)
         {
             QMutexLocker locker(&m_mutex);
+            if (m_shutdown)
+                return MF_E_SHUTDOWN;
+
             HRESULT hr = S_OK;
             IUnknown *pState = NULL;
             hr = pAsyncResult->GetState(&pState);
@@ -1108,6 +1131,9 @@ namespace
                             break;
                         }
                     }
+
+                    if (m_state == State_Started)
+                        schedulePresentation(true);
                 case OpRestart:
                     endPreroll(S_FALSE);
                     if (SUCCEEDED(hr)) {
@@ -1126,10 +1152,7 @@ namespace
                 case OpStop:
                     // Drop samples from queue.
                     hr = processSamplesFromQueue(DropSamples);
-                    if (m_scheduledBuffer) {
-                        m_scheduledBuffer->Release();
-                        m_scheduledBuffer = NULL;
-                    }
+                    clearBufferCache();
                     // Send the event even if the previous call failed.
                     hr = queueEvent(MEStreamSinkStopped, GUID_NULL, hr, NULL);
                     if (m_surface->isActive()) {
@@ -1145,7 +1168,7 @@ namespace
                     hr = queueEvent(MEStreamSinkPaused, GUID_NULL, hr, NULL);
                     break;
                 case OpSetRate:
-                    //TODO:
+                    hr = queueEvent(MEStreamSinkRateChanged, GUID_NULL, S_OK, NULL);
                     break;
                 case OpProcessSample:
                 case OpPlaceMarker:
@@ -1314,13 +1337,15 @@ namespace
 
         HRESULT processSampleData(IMFSample *pSample)
         {
+            m_sampleRequested = false;
+
             LONGLONG time, duration = -1;
             HRESULT hr = pSample->GetSampleTime(&time);
             if (SUCCEEDED(hr))
                pSample->GetSampleDuration(&duration);
 
             if (m_prerolling) {
-                if (SUCCEEDED(hr) && time >= m_prerollTargetTime) {
+                if (SUCCEEDED(hr) && ((time - m_prerollTargetTime) * m_rate) >= 0) {
                     IMFMediaBuffer *pBuffer = NULL;
                     hr = pSample->ConvertToContiguousBuffer(&pBuffer);
                     if (SUCCEEDED(hr)) {
@@ -1337,7 +1362,7 @@ namespace
             } else {
                 bool requestSample = true;
                 // If the time stamp is too early, just discard this sample.
-                if (SUCCEEDED(hr) && time >= m_startTime) {
+                if (SUCCEEDED(hr) && ((time - m_startTime) * m_rate) >= 0) {
                     IMFMediaBuffer *pBuffer = NULL;
                     hr = pSample->ConvertToContiguousBuffer(&pBuffer);
                     if (SUCCEEDED(hr)) {
@@ -1370,11 +1395,16 @@ namespace
             foreach (SampleBuffer sb, m_bufferCache)
                 sb.m_buffer->Release();
             m_bufferCache.clear();
+
+            if (m_scheduledBuffer) {
+                m_scheduledBuffer->Release();
+                m_scheduledBuffer = NULL;
+            }
         }
 
         void schedulePresentation(bool requestSample)
         {
-            if (m_state == State_Paused)
+            if (m_state == State_Paused || m_state == State_Prerolling)
                 return;
             if (!m_scheduledBuffer) {
                 //get time from presentation time
@@ -1385,11 +1415,12 @@ namespace
                         timeOK = false;
                 }
                 while (!m_bufferCache.isEmpty()) {
-                    SampleBuffer sb = m_bufferCache.first();
-                    m_bufferCache.pop_front();
-                    if (timeOK && currentTime > sb.m_time) {
+                    SampleBuffer sb = m_bufferCache.takeFirst();
+                    if (timeOK && ((sb.m_time - currentTime) * m_rate) < 0) {
                         sb.m_buffer->Release();
+#ifdef DEBUG_MEDIAFOUNDATION
                         qDebug() << "currentPresentTime =" << float(currentTime / 10000) * 0.001f << " and sampleTime is" << float(sb.m_time / 10000) * 0.001f;
+#endif
                         continue;
                     }
                     m_scheduledBuffer = sb.m_buffer;
@@ -1401,13 +1432,16 @@ namespace
                     break;
                 }
             }
-            if (requestSample && m_bufferCache.size() < BUFFER_CACHE_SIZE)
+            if (requestSample && !m_sampleRequested && m_bufferCache.size() < BUFFER_CACHE_SIZE) {
+                m_sampleRequested = true;
                 queueEvent(MEStreamSinkRequestSample, GUID_NULL, S_OK, NULL);
+            }
         }
         IMFMediaBuffer *m_scheduledBuffer;
         MFTIME m_bufferStartTime;
         MFTIME m_bufferDuration;
         IMFPresentationClock *m_presentationClock;
+        bool m_sampleRequested;
         float m_rate;
     };
 
@@ -1418,6 +1452,8 @@ namespace
         /* NotSet */                TRUE,   FALSE,  FALSE,    FALSE,    FALSE,    FALSE,    FALSE,      FALSE,    FALSE,    FALSE,
 
         /* Ready */                 TRUE,   TRUE,   TRUE,       FALSE,    TRUE,     TRUE,     TRUE,      FALSE,    TRUE,     TRUE,
+
+        /* Prerolling */            TRUE,   TRUE,   FALSE,    FALSE,     TRUE,    TRUE,      TRUE,      TRUE,      TRUE,     TRUE,
 
         /* Start */                 FALSE,  TRUE,   TRUE,      FALSE,    TRUE,     TRUE,     TRUE,       TRUE,     TRUE,     TRUE,
 
@@ -1434,7 +1470,11 @@ namespace
         // 2. While paused, the sink accepts samples but does not process them.
     };
 
-    class MediaSink : public IMFFinalizableMediaSink, public IMFClockStateSink, public IMFMediaSinkPreroll
+    class MediaSink : public IMFFinalizableMediaSink,
+                      public IMFClockStateSink,
+                      public IMFMediaSinkPreroll,
+                      public IMFGetService,
+                      public IMFRateSupport
     {
     public:
         MediaSink(MFVideoRendererControl *rendererControl)
@@ -1475,6 +1515,14 @@ namespace
             m_stream->present();
         }
 
+        void clearScheduledFrame()
+        {
+            QMutexLocker locker(&m_mutex);
+            if (m_shutdown)
+                return;
+            m_stream->clearScheduledFrame();
+        }
+
         MFTIME getTime()
         {
             QMutexLocker locker(&m_mutex);
@@ -1498,10 +1546,14 @@ namespace
                 return E_POINTER;
             if (riid == IID_IMFMediaSink) {
                 *ppvObject = static_cast<IMFMediaSink*>(this);
+            } else if (riid == IID_IMFGetService) {
+                *ppvObject = static_cast<IMFGetService*>(this);
             } else if (riid == IID_IMFMediaSinkPreroll) {
                 *ppvObject = static_cast<IMFMediaSinkPreroll*>(this);
             } else if (riid == IID_IMFClockStateSink) {
                 *ppvObject = static_cast<IMFClockStateSink*>(this);
+            } else if (riid == IID_IMFRateSupport) {
+                *ppvObject = static_cast<IMFRateSupport*>(this);
             } else if (riid == IID_IUnknown) {
                 *ppvObject = static_cast<IUnknown*>(static_cast<IMFFinalizableMediaSink*>(this));
             } else {
@@ -1526,7 +1578,19 @@ namespace
             return cRef;
         }
 
+        // IMFGetService methods
+        STDMETHODIMP GetService(const GUID &guidService,
+                                const IID &riid,
+                                LPVOID *ppvObject)
+        {
+            if (!ppvObject)
+                return E_POINTER;
 
+            if (guidService != MF_RATE_CONTROL_SERVICE)
+                return MF_E_UNSUPPORTED_SERVICE;
+
+            return QueryInterface(riid, ppvObject);
+        }
 
         //IMFMediaSinkPreroll
         STDMETHODIMP NotifyPreroll(MFTIME hnsUpcomingStartTime)
@@ -1719,6 +1783,68 @@ namespace
                 return MF_E_SHUTDOWN;
             m_playRate = flRate;
             return m_stream->setRate(flRate);
+        }
+
+        // IMFRateSupport methods
+        STDMETHODIMP GetFastestRate(MFRATE_DIRECTION eDirection,
+                                    BOOL fThin,
+                                    float *pflRate)
+        {
+            if (!pflRate)
+                return E_POINTER;
+
+            *pflRate = (fThin ? 8.f : 2.0f) * (eDirection == MFRATE_FORWARD ? 1 : -1) ;
+
+            return S_OK;
+        }
+
+        STDMETHODIMP GetSlowestRate(MFRATE_DIRECTION eDirection,
+                                    BOOL fThin,
+                                    float *pflRate)
+        {
+            Q_UNUSED(eDirection);
+            Q_UNUSED(fThin);
+
+            if (!pflRate)
+                return E_POINTER;
+
+            // we support any rate
+            *pflRate = 0.f;
+
+            return S_OK;
+        }
+
+        STDMETHODIMP IsRateSupported(BOOL fThin,
+                                     float flRate,
+                                     float *pflNearestSupportedRate)
+        {
+            HRESULT hr = S_OK;
+
+            if (!qFuzzyIsNull(flRate)) {
+                MFRATE_DIRECTION direction = flRate > 0.f ? MFRATE_FORWARD
+                                                          : MFRATE_REVERSE;
+
+                float fastestRate = 0.f;
+                float slowestRate = 0.f;
+                GetFastestRate(direction, fThin, &fastestRate);
+                GetSlowestRate(direction, fThin, &slowestRate);
+
+                if (direction == MFRATE_REVERSE)
+                    qSwap(fastestRate, slowestRate);
+
+                if (flRate < slowestRate || flRate > fastestRate) {
+                    hr = MF_E_UNSUPPORTED_RATE;
+                    if (pflNearestSupportedRate) {
+                        *pflNearestSupportedRate = qBound(slowestRate,
+                                                          flRate,
+                                                          fastestRate);
+                    }
+                }
+            } else if (pflNearestSupportedRate) {
+                *pflNearestSupportedRate = flRate;
+            }
+
+            return hr;
         }
 
     private:
@@ -2061,6 +2187,14 @@ namespace
             m_sink->present();
         }
 
+        void clearScheduledFrame()
+        {
+            QMutexLocker locker(&m_mutex);
+            if (!m_sink)
+                return;
+            m_sink->clearScheduledFrame();
+        }
+
         MFTIME getTime()
         {
             if (m_sink)
@@ -2086,14 +2220,33 @@ namespace
     };
 }
 
+
+class EVRCustomPresenterActivate : public MFAbstractActivate
+{
+public:
+    EVRCustomPresenterActivate();
+    ~EVRCustomPresenterActivate()
+    { }
+
+    STDMETHODIMP ActivateObject(REFIID riid, void **ppv);
+    STDMETHODIMP ShutdownObject();
+    STDMETHODIMP DetachObject();
+
+    void setSurface(QAbstractVideoSurface *surface);
+
+private:
+    EVRCustomPresenter *m_presenter;
+    QAbstractVideoSurface *m_surface;
+    QMutex m_mutex;
+};
+
+
 MFVideoRendererControl::MFVideoRendererControl(QObject *parent)
     : QVideoRendererControl(parent)
     , m_surface(0)
     , m_currentActivate(0)
     , m_callback(0)
-#ifdef QT_OPENGL_ES_2_ANGLE
     , m_presenterActivate(0)
-#endif
 {
 }
 
@@ -2107,13 +2260,11 @@ void MFVideoRendererControl::clear()
     if (m_surface)
         m_surface->stop();
 
-#ifdef QT_OPENGL_ES_2_ANGLE
     if (m_presenterActivate) {
         m_presenterActivate->ShutdownObject();
         m_presenterActivate->Release();
         m_presenterActivate = NULL;
     }
-#endif
 
     if (m_currentActivate) {
         m_currentActivate->ShutdownObject();
@@ -2142,21 +2293,16 @@ void MFVideoRendererControl::setSurface(QAbstractVideoSurface *surface)
         connect(m_surface, SIGNAL(supportedFormatsChanged()), this, SLOT(supportedFormatsChanged()));
     }
 
-#ifdef QT_OPENGL_ES_2_ANGLE
     if (m_presenterActivate)
         m_presenterActivate->setSurface(m_surface);
-    else
-#endif
-    if (m_currentActivate)
+    else if (m_currentActivate)
         static_cast<VideoRendererActivate*>(m_currentActivate)->setSurface(m_surface);
 }
 
 void MFVideoRendererControl::customEvent(QEvent *event)
 {
-#ifdef QT_OPENGL_ES_2_ANGLE
     if (m_presenterActivate)
         return;
-#endif
 
     if (!m_currentActivate)
         return;
@@ -2165,10 +2311,16 @@ void MFVideoRendererControl::customEvent(QEvent *event)
         MFTIME targetTime = static_cast<MediaStream::PresentEvent*>(event)->targetTime();
         MFTIME currentTime = static_cast<VideoRendererActivate*>(m_currentActivate)->getTime();
         float playRate = static_cast<VideoRendererActivate*>(m_currentActivate)->getPlayRate();
-        if (playRate > 0.0001f && targetTime > currentTime)
-            QTimer::singleShot(int((float)((targetTime - currentTime) / 10000) / playRate), this, SLOT(present()));
-        else
+        if (!qFuzzyIsNull(playRate) && targetTime != currentTime) {
+            // If the scheduled frame is too late, skip it
+            const int interval = ((targetTime - currentTime) / 10000) / playRate;
+            if (interval < 0)
+                static_cast<VideoRendererActivate*>(m_currentActivate)->clearScheduledFrame();
+            else
+                QTimer::singleShot(interval, this, SLOT(present()));
+        } else {
             present();
+        }
         return;
     }
     if (event->type() >= MediaStream::StartSurface) {
@@ -2181,21 +2333,17 @@ void MFVideoRendererControl::customEvent(QEvent *event)
 
 void MFVideoRendererControl::supportedFormatsChanged()
 {
-#ifdef QT_OPENGL_ES_2_ANGLE
     if (m_presenterActivate)
-        m_presenterActivate->supportedFormatsChanged();
-    else
-#endif
+        return;
+
     if (m_currentActivate)
         static_cast<VideoRendererActivate*>(m_currentActivate)->supportedFormatsChanged();
 }
 
 void MFVideoRendererControl::present()
 {
-#ifdef QT_OPENGL_ES_2_ANGLE
     if (m_presenterActivate)
         return;
-#endif
 
     if (m_currentActivate)
         static_cast<VideoRendererActivate*>(m_currentActivate)->present();
@@ -2207,24 +2355,66 @@ IMFActivate* MFVideoRendererControl::createActivate()
 
     clear();
 
-#ifdef QT_OPENGL_ES_2_ANGLE
-    // We can use the EVR with our custom presenter only if the surface supports OpenGL
-    // texture handles
-    if (!m_surface->supportedPixelFormats(QAbstractVideoBuffer::GLTextureHandle).isEmpty()) {
-        // Create the EVR media sink, but replace the presenter with our own
-        if (SUCCEEDED(MFCreateVideoRendererActivate(::GetShellWindow(), &m_currentActivate))) {
-            m_presenterActivate = new EVRCustomPresenterActivate;
-            m_currentActivate->SetUnknown(MF_ACTIVATE_CUSTOM_VIDEO_PRESENTER_ACTIVATE, m_presenterActivate);
-        }
+    // Create the EVR media sink, but replace the presenter with our own
+    if (SUCCEEDED(MFCreateVideoRendererActivate(::GetShellWindow(), &m_currentActivate))) {
+        m_presenterActivate = new EVRCustomPresenterActivate;
+        m_currentActivate->SetUnknown(MF_ACTIVATE_CUSTOM_VIDEO_PRESENTER_ACTIVATE, m_presenterActivate);
+    } else {
+        m_currentActivate = new VideoRendererActivate(this);
     }
-
-    if (!m_currentActivate)
-#endif
-    m_currentActivate = new VideoRendererActivate(this);
 
     setSurface(m_surface);
 
     return m_currentActivate;
+}
+
+
+EVRCustomPresenterActivate::EVRCustomPresenterActivate()
+    : MFAbstractActivate()
+    , m_presenter(0)
+    , m_surface(0)
+{ }
+
+HRESULT EVRCustomPresenterActivate::ActivateObject(REFIID riid, void **ppv)
+{
+    if (!ppv)
+        return E_INVALIDARG;
+    QMutexLocker locker(&m_mutex);
+    if (!m_presenter) {
+        m_presenter = new EVRCustomPresenter;
+        if (m_surface)
+            m_presenter->setSurface(m_surface);
+    }
+    return m_presenter->QueryInterface(riid, ppv);
+}
+
+HRESULT EVRCustomPresenterActivate::ShutdownObject()
+{
+    // The presenter does not implement IMFShutdown so
+    // this function is the same as DetachObject()
+    return DetachObject();
+}
+
+HRESULT EVRCustomPresenterActivate::DetachObject()
+{
+    QMutexLocker locker(&m_mutex);
+    if (m_presenter) {
+        m_presenter->Release();
+        m_presenter = 0;
+    }
+    return S_OK;
+}
+
+void EVRCustomPresenterActivate::setSurface(QAbstractVideoSurface *surface)
+{
+    QMutexLocker locker(&m_mutex);
+    if (m_surface == surface)
+        return;
+
+    m_surface = surface;
+
+    if (m_presenter)
+        m_presenter->setSurface(surface);
 }
 
 #include "moc_mfvideorenderercontrol.cpp"

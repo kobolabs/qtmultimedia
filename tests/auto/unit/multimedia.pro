@@ -7,6 +7,7 @@ SUBDIRS += \
     qaudioformat \
     qaudionamespace \
     qcamera \
+    qcamerainfo \
     qcameraimagecapture \
     qmediabindableinterface \
     qmediacontainercontrol \
@@ -30,13 +31,7 @@ SUBDIRS += \
     qvideosurfaceformat \
     qwavedecoder \
     qaudiobuffer \
-    qdeclarativeaudio \
     qaudiodecoder \
     qaudioprobe \
     qvideoprobe \
     qsamplecache
-
-disabled {
-    SUBDIRS += \
-        qdeclarativevideo
-}

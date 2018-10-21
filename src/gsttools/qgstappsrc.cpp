@@ -1,39 +1,31 @@
 /****************************************************************************
 **
-** Copyright (C) 2013 Digia Plc and/or its subsidiary(-ies).
-** Contact: http://www.qt-project.org/legal
+** Copyright (C) 2015 The Qt Company Ltd.
+** Contact: http://www.qt.io/licensing/
 **
 ** This file is part of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL$
+** $QT_BEGIN_LICENSE:LGPL21$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and Digia.  For licensing terms and
-** conditions see http://qt.digia.com/licensing.  For further information
-** use the contact form at http://qt.digia.com/contact-us.
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see http://www.qt.io/terms-conditions. For further
+** information use the contact form at http://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU Lesser General Public License version 2.1 requirements
-** will be met: http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 2.1 or version 3 as published by the Free
+** Software Foundation and appearing in the file LICENSE.LGPLv21 and
+** LICENSE.LGPLv3 included in the packaging of this file. Please review the
+** following information to ensure the GNU Lesser General Public License
+** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
+** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
 **
-** In addition, as a special exception, Digia gives you certain additional
-** rights.  These rights are described in the Digia Qt LGPL Exception
+** As a special exception, The Qt Company gives you certain additional
+** rights. These rights are described in The Qt Company LGPL Exception
 ** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3.0 as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU General Public License version 3.0 requirements will be
-** met: http://www.gnu.org/copyleft/gpl.html.
-**
 **
 ** $QT_END_LICENSE$
 **
@@ -42,7 +34,6 @@
 #include <QDebug>
 
 #include "qgstappsrc_p.h"
-#include <QtNetwork>
 
 QGstAppSrc::QGstAppSrc(QObject *parent)
     :QObject(parent)
@@ -50,8 +41,7 @@ QGstAppSrc::QGstAppSrc(QObject *parent)
     ,m_appSrc(0)
     ,m_sequential(false)
     ,m_maxBytes(0)
-    ,m_setup(false)
-    ,m_dataRequestSize(-1)
+    ,m_dataRequestSize(~0)
     ,m_dataRequested(false)
     ,m_enoughData(false)
     ,m_forceData(false)
@@ -69,10 +59,16 @@ QGstAppSrc::~QGstAppSrc()
 
 bool QGstAppSrc::setup(GstElement* appsrc)
 {
-    if (m_setup || m_stream == 0 || appsrc == 0)
+    if (m_appSrc) {
+        gst_object_unref(G_OBJECT(m_appSrc));
+        m_appSrc = 0;
+    }
+
+    if (!appsrc || !m_stream)
         return false;
 
     m_appSrc = GST_APP_SRC(appsrc);
+    gst_object_ref(G_OBJECT(m_appSrc));
     gst_app_src_set_callbacks(m_appSrc, (GstAppSrcCallbacks*)&m_callbacks, this, (GDestroyNotify)&QGstAppSrc::destroy_notify);
 
     g_object_get(G_OBJECT(m_appSrc), "max-bytes", &m_maxBytes, NULL);
@@ -84,32 +80,35 @@ bool QGstAppSrc::setup(GstElement* appsrc)
     gst_app_src_set_stream_type(m_appSrc, m_streamType);
     gst_app_src_set_size(m_appSrc, (m_sequential) ? -1 : m_stream->size());
 
-    return  m_setup = true;
+    return true;
 }
 
 void QGstAppSrc::setStream(QIODevice *stream)
 {
-    if (stream == 0)
-        return;
     if (m_stream) {
         disconnect(m_stream, SIGNAL(readyRead()), this, SLOT(onDataReady()));
         disconnect(m_stream, SIGNAL(destroyed()), this, SLOT(streamDestroyed()));
+        m_stream = 0;
     }
-    if (m_appSrc)
-        gst_object_unref(G_OBJECT(m_appSrc));
 
-    m_dataRequestSize = -1;
+    if (m_appSrc) {
+        gst_object_unref(G_OBJECT(m_appSrc));
+        m_appSrc = 0;
+    }
+
+    m_dataRequestSize = ~0;
     m_dataRequested = false;
     m_enoughData = false;
     m_forceData = false;
+    m_sequential = false;
     m_maxBytes = 0;
 
-    m_appSrc = 0;
-    m_stream = stream;
-    connect(m_stream, SIGNAL(destroyed()), SLOT(streamDestroyed()));
-    connect(m_stream, SIGNAL(readyRead()), this, SLOT(onDataReady()));
-    m_sequential = m_stream->isSequential();
-    m_setup = false;
+    if (stream) {
+        m_stream = stream;
+        connect(m_stream, SIGNAL(destroyed()), SLOT(streamDestroyed()));
+        connect(m_stream, SIGNAL(readyRead()), this, SLOT(onDataReady()));
+        m_sequential = m_stream->isSequential();
+    }
 }
 
 QIODevice *QGstAppSrc::stream() const
@@ -140,37 +139,59 @@ void QGstAppSrc::streamDestroyed()
 
 void QGstAppSrc::pushDataToAppSrc()
 {
-    if (!isStreamValid() || !m_setup)
+    if (!isStreamValid() || !m_appSrc)
         return;
 
     if (m_dataRequested && !m_enoughData) {
         qint64 size;
-        if (m_dataRequestSize == (unsigned int)-1)
+        if (m_dataRequestSize == ~0u)
             size = qMin(m_stream->bytesAvailable(), queueSize());
         else
             size = qMin(m_stream->bytesAvailable(), (qint64)m_dataRequestSize);
-        void *data = g_malloc(size);
-        GstBuffer* buffer = gst_app_buffer_new(data, size, g_free, data);
-        buffer->offset = m_stream->pos();
-        qint64 bytesRead = m_stream->read((char*)GST_BUFFER_DATA(buffer), size);
-        buffer->offset_end =  buffer->offset + bytesRead - 1;
 
-        if (bytesRead > 0) {
-            m_dataRequested = false;
-            m_enoughData = false;
-            GstFlowReturn ret = gst_app_src_push_buffer (GST_APP_SRC (element()), buffer);
-            if (ret == GST_FLOW_ERROR) {
-                qWarning()<<"appsrc: push buffer error";
-            } else if (ret == GST_FLOW_WRONG_STATE) {
-                qWarning()<<"appsrc: push buffer wrong state";
-            } else if (ret == GST_FLOW_RESEND) {
-                qWarning()<<"appsrc: push buffer resend";
+        if (size) {
+            GstBuffer* buffer = gst_buffer_new_and_alloc(size);
+
+#if GST_CHECK_VERSION(1,0,0)
+            GstMapInfo mapInfo;
+            gst_buffer_map(buffer, &mapInfo, GST_MAP_WRITE);
+            void* bufferData = mapInfo.data;
+#else
+            void* bufferData = GST_BUFFER_DATA(buffer);
+#endif
+
+            buffer->offset = m_stream->pos();
+            qint64 bytesRead = m_stream->read((char*)bufferData, size);
+            buffer->offset_end =  buffer->offset + bytesRead - 1;
+
+#if GST_CHECK_VERSION(1,0,0)
+            gst_buffer_unmap(buffer, &mapInfo);
+#endif
+
+            if (bytesRead > 0) {
+                m_dataRequested = false;
+                m_enoughData = false;
+                GstFlowReturn ret = gst_app_src_push_buffer (GST_APP_SRC (element()), buffer);
+                if (ret == GST_FLOW_ERROR) {
+                    qWarning()<<"appsrc: push buffer error";
+#if GST_CHECK_VERSION(1,0,0)
+                } else if (ret == GST_FLOW_FLUSHING) {
+                    qWarning()<<"appsrc: push buffer wrong state";
+                }
+#else
+                } else if (ret == GST_FLOW_WRONG_STATE) {
+                    qWarning()<<"appsrc: push buffer wrong state";
+                }
+#endif
+#if GST_VERSION_MAJOR < 1
+                else if (ret == GST_FLOW_RESEND) {
+                    qWarning()<<"appsrc: push buffer resend";
+                }
+#endif
             }
-        }
-
-        // After reading we might be all done
-        if (m_stream->atEnd())
+        } else {
             sendEOS();
+        }
     } else if (m_stream->atEnd()) {
         sendEOS();
     }
@@ -225,6 +246,9 @@ void QGstAppSrc::destroy_notify(gpointer data)
 
 void QGstAppSrc::sendEOS()
 {
+    if (!m_appSrc)
+        return;
+
     gst_app_src_end_of_stream(GST_APP_SRC(m_appSrc));
     if (isStreamValid() && !stream()->isSequential())
         stream()->reset();

@@ -1,39 +1,31 @@
 /****************************************************************************
 **
-** Copyright (C) 2013 Digia Plc and/or its subsidiary(-ies).
-** Contact: http://www.qt-project.org/legal
+** Copyright (C) 2015 The Qt Company Ltd.
+** Contact: http://www.qt.io/licensing/
 **
 ** This file is part of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL$
+** $QT_BEGIN_LICENSE:LGPL21$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and Digia.  For licensing terms and
-** conditions see http://qt.digia.com/licensing.  For further information
-** use the contact form at http://qt.digia.com/contact-us.
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see http://www.qt.io/terms-conditions. For further
+** information use the contact form at http://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU Lesser General Public License version 2.1 requirements
-** will be met: http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 2.1 or version 3 as published by the Free
+** Software Foundation and appearing in the file LICENSE.LGPLv21 and
+** LICENSE.LGPLv3 included in the packaging of this file. Please review the
+** following information to ensure the GNU Lesser General Public License
+** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
+** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
 **
-** In addition, as a special exception, Digia gives you certain additional
-** rights.  These rights are described in the Digia Qt LGPL Exception
+** As a special exception, The Qt Company gives you certain additional
+** rights. These rights are described in The Qt Company LGPL Exception
 ** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3.0 as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU General Public License version 3.0 requirements will be
-** met: http://www.gnu.org/copyleft/gpl.html.
-**
 **
 ** $QT_END_LICENSE$
 **
@@ -46,6 +38,9 @@
 #include "qdeclarativeaudio_p.h"
 #include "qdeclarativemediametadata_p.h"
 
+#include "mockmediaserviceprovider.h"
+#include "mockmediaplayerservice.h"
+
 #include <QtMultimedia/qmediametadata.h>
 #include <qmediaplayercontrol.h>
 #include <qmediaservice.h>
@@ -53,6 +48,8 @@
 #include <qmetadatareadercontrol.h>
 
 #include <QtGui/qguiapplication.h>
+#include <QtQml/qqmlengine.h>
+#include <QtQml/qqmlcomponent.h>
 
 class tst_QDeclarativeAudio : public QObject
 {
@@ -81,9 +78,11 @@ private slots:
     void metaData();
     void error();
     void loops();
+    void audioRole();
 };
 
 Q_DECLARE_METATYPE(QDeclarativeAudio::Error);
+Q_DECLARE_METATYPE(QDeclarativeAudio::AudioRole);
 
 class QtTestMediaPlayerControl : public QMediaPlayerControl
 {
@@ -293,6 +292,7 @@ public:
 void tst_QDeclarativeAudio::initTestCase()
 {
     qRegisterMetaType<QDeclarativeAudio::Error>();
+    qRegisterMetaType<QDeclarativeAudio::AudioRole>();
 }
 
 void tst_QDeclarativeAudio::nullPlayerControl()
@@ -777,7 +777,7 @@ void tst_QDeclarativeAudio::playbackRate()
     audio.setPlaybackRate(2.0);
     QCOMPARE(audio.playbackRate(), qreal(2.0));
     QCOMPARE(provider.playerControl()->playbackRate(), qreal(2.0));
-    QCOMPARE(spy.count(), 3);
+    QCOMPARE(spy.count(), 2);
 }
 
 void tst_QDeclarativeAudio::status()
@@ -1013,6 +1013,47 @@ void tst_QDeclarativeAudio::loops()
     QCOMPARE(stoppedSpy.count(), ++stoppedCount);
 
     qDebug() << "Testing version 5";
+}
+
+void tst_QDeclarativeAudio::audioRole()
+{
+    MockMediaPlayerService mockService;
+    MockMediaServiceProvider mockProvider(&mockService);
+    QMediaServiceProvider::setDefaultServiceProvider(&mockProvider);
+
+    QQmlEngine engine;
+    QQmlComponent component(&engine);
+    component.setData("import QtQuick 2.0 \n import QtMultimedia 5.6 \n Audio { }", QUrl());
+
+    {
+        mockService.setHasAudioRole(false);
+        QDeclarativeAudio *audio = static_cast<QDeclarativeAudio*>(component.create());
+
+        QCOMPARE(audio->audioRole(), QDeclarativeAudio::UnknownRole);
+        QVERIFY(audio->supportedAudioRoles().isArray());
+        QVERIFY(audio->supportedAudioRoles().toVariant().toList().isEmpty());
+
+        QSignalSpy spy(audio, SIGNAL(audioRoleChanged()));
+        audio->setAudioRole(QDeclarativeAudio::MusicRole);
+        QCOMPARE(audio->audioRole(), QDeclarativeAudio::UnknownRole);
+        QCOMPARE(spy.count(), 0);
+    }
+
+    {
+        mockService.reset();
+        mockService.setHasAudioRole(true);
+        QDeclarativeAudio *audio = static_cast<QDeclarativeAudio*>(component.create());
+        QSignalSpy spy(audio, SIGNAL(audioRoleChanged()));
+
+        QCOMPARE(audio->audioRole(), QDeclarativeAudio::UnknownRole);
+        QVERIFY(audio->supportedAudioRoles().isArray());
+        QVERIFY(!audio->supportedAudioRoles().toVariant().toList().isEmpty());
+
+        audio->setAudioRole(QDeclarativeAudio::MusicRole);
+        QCOMPARE(audio->audioRole(), QDeclarativeAudio::MusicRole);
+        QCOMPARE(mockService.mockAudioRoleControl->audioRole(), QAudio::MusicRole);
+        QCOMPARE(spy.count(), 1);
+    }
 }
 
 QTEST_MAIN(tst_QDeclarativeAudio)

@@ -1,39 +1,31 @@
 /****************************************************************************
 **
-** Copyright (C) 2013 Digia Plc and/or its subsidiary(-ies).
-** Contact: http://www.qt-project.org/legal
+** Copyright (C) 2015 The Qt Company Ltd.
+** Contact: http://www.qt.io/licensing/
 **
 ** This file is part of the Qt Mobility Components.
 **
-** $QT_BEGIN_LICENSE:LGPL$
+** $QT_BEGIN_LICENSE:LGPL21$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and Digia.  For licensing terms and
-** conditions see http://qt.digia.com/licensing.  For further information
-** use the contact form at http://qt.digia.com/contact-us.
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see http://www.qt.io/terms-conditions. For further
+** information use the contact form at http://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU Lesser General Public License version 2.1 requirements
-** will be met: http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 2.1 or version 3 as published by the Free
+** Software Foundation and appearing in the file LICENSE.LGPLv21 and
+** LICENSE.LGPLv3 included in the packaging of this file. Please review the
+** following information to ensure the GNU Lesser General Public License
+** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
+** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
 **
-** In addition, as a special exception, Digia gives you certain additional
-** rights.  These rights are described in the Digia Qt LGPL Exception
+** As a special exception, The Qt Company gives you certain additional
+** rights. These rights are described in The Qt Company LGPL Exception
 ** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3.0 as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU General Public License version 3.0 requirements will be
-** met: http://www.gnu.org/copyleft/gpl.html.
-**
 **
 ** $QT_END_LICENSE$
 **
@@ -42,17 +34,32 @@
 /* Camera snippets */
 
 #include "qcamera.h"
+#include "qcamerainfo.h"
 #include "qcameraviewfinder.h"
+#include "qcameraviewfindersettings.h"
 #include "qmediarecorder.h"
 #include "qcameraimagecapture.h"
 #include "qcameraimageprocessing.h"
 #include "qabstractvideosurface.h"
+#include <QtGui/qscreen.h>
+#include <QtGui/qguiapplication.h>
+#include <QtGui/qimage.h>
 
 /* Globals so that everything is consistent. */
 QCamera *camera = 0;
 QCameraViewfinder *viewfinder = 0;
 QMediaRecorder *recorder = 0;
 QCameraImageCapture *imageCapture = 0;
+
+//! [Camera overview check]
+bool checkCameraAvailability()
+{
+    if (QCameraInfo::availableCameras().count() > 0)
+        return true;
+    else
+        return false;
+}
+//! [Camera overview check]
 
 void overview_viewfinder()
 {
@@ -64,6 +71,13 @@ void overview_viewfinder()
 
     camera->start(); // to start the viewfinder
     //! [Camera overview viewfinder]
+}
+
+void overview_camera_by_position()
+{
+    //! [Camera overview position]
+    camera = new QCamera(QCamera::FrontFace);
+    //! [Camera overview position]
 }
 
 // -.-
@@ -92,6 +106,32 @@ void overview_surface()
     camera->start();
     // MyVideoSurface::present(..) will be called with viewfinder frames
     //! [Camera overview surface]
+}
+
+void overview_viewfinder_orientation()
+{
+    QCamera camera;
+
+    //! [Camera overview viewfinder orientation]
+    // Assuming a QImage has been created from the QVideoFrame that needs to be presented
+    QImage videoFrame;
+    QCameraInfo cameraInfo(camera); // needed to get the camera sensor position and orientation
+
+    // Get the current display orientation
+    const QScreen *screen = QGuiApplication::primaryScreen();
+    const int screenAngle = screen->angleBetween(screen->nativeOrientation(), screen->orientation());
+
+    int rotation;
+    if (cameraInfo.position() == QCamera::BackFace) {
+        rotation = (cameraInfo.orientation() - screenAngle) % 360;
+    } else {
+        // Front position, compensate the mirror
+        rotation = (360 - cameraInfo.orientation() + screenAngle) % 360;
+    }
+
+    // Rotate the frame so it always shows in the correct orientation
+    videoFrame = videoFrame.transformed(QTransform().rotate(rotation));
+    //! [Camera overview viewfinder orientation]
 }
 
 void overview_still()
@@ -128,6 +168,41 @@ void overview_movie()
     // sometime later, or on another press
     recorder->stop();
     //! [Camera overview movie]
+}
+
+void camera_listing()
+{
+    //! [Camera listing]
+    QList<QCameraInfo> cameras = QCameraInfo::availableCameras();
+    foreach (const QCameraInfo &cameraInfo, cameras)
+        qDebug() << cameraInfo.deviceName();
+    //! [Camera listing]
+}
+
+void camera_selection()
+{
+    //! [Camera selection]
+    QList<QCameraInfo> cameras = QCameraInfo::availableCameras();
+    foreach (const QCameraInfo &cameraInfo, cameras) {
+        if (cameraInfo.deviceName() == "mycamera")
+            camera = new QCamera(cameraInfo);
+    }
+    //! [Camera selection]
+}
+
+void camera_info()
+{
+    //! [Camera info]
+    QCamera myCamera;
+    QCameraInfo cameraInfo(myCamera);
+
+    if (cameraInfo.position() == QCamera::FrontFace)
+        qDebug() << "The camera is on the front face of the hardware system.";
+    else if (cameraInfo.position() == QCamera::BackFace)
+        qDebug() << "The camera is on the back face of the hardware system.";
+
+    qDebug() << "The camera sensor orientation is " << cameraInfo.orientation() << " degrees.";
+    //! [Camera info]
 }
 
 void camera_blah()
@@ -198,4 +273,16 @@ void camerafocus()
         }
     }
     //! [Camera focus zones]
+}
+
+void camera_viewfindersettings()
+{
+    //! [Camera viewfinder settings]
+    QCameraViewfinderSettings viewfinderSettings;
+    viewfinderSettings.setResolution(640, 480);
+    viewfinderSettings.setMinimumFrameRate(15.0);
+    viewfinderSettings.setMaximumFrameRate(30.0);
+
+    camera->setViewfinderSettings(viewfinderSettings);
+    //! [Camera viewfinder settings]
 }

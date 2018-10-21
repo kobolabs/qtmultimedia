@@ -6,27 +6,34 @@ win32 {
     qtCompileTest(directshow) {
         qtCompileTest(wshellitem)
     }
-    qtCompileTest(wmsdk)
-    qtCompileTest(wmp)
-    contains(QT_CONFIG, wmf-backend): qtCompileTest(wmf)
     qtCompileTest(evr)
+    qtCompileTest(wmsdk)
+    qtCompileTest(wmf)
 } else:mac {
     qtCompileTest(avfoundation)
-} else:android {
-    SDK_ROOT = $$(ANDROID_SDK_ROOT)
-    isEmpty(SDK_ROOT): SDK_ROOT = $$DEFAULT_ANDROID_SDK_ROOT
-    !exists($$SDK_ROOT/platforms/android-11/android.jar): error("QtMultimedia for Android requires API level 11")
 } else:qnx {
     qtCompileTest(mmrenderer)
-} else {
-    qtCompileTest(alsa)
-    qtCompileTest(pulseaudio)
-    qtCompileTest(gstreamer) {
+} else:!android {
+    contains(QT_CONFIG, alsa):qtCompileTest(alsa)
+    contains(QT_CONFIG, pulseaudio):qtCompileTest(pulseaudio)
+
+    isEmpty(GST_VERSION) {
+        contains(QT_CONFIG, gstreamer-0.10) {
+            GST_VERSION = 0.10
+        } else: contains(QT_CONFIG, gstreamer-1.0) {
+            GST_VERSION = 1.0
+        }
+    }
+    cache(GST_VERSION, set)
+    !isEmpty(GST_VERSION):qtCompileTest(gstreamer) {
         qtCompileTest(gstreamer_photography)
         qtCompileTest(gstreamer_encodingprofiles)
         qtCompileTest(gstreamer_appsrc)
+        qtCompileTest(linux_v4l)
     }
+
     qtCompileTest(resourcepolicy)
+    contains(QT_CONFIG, opengles2):qtCompileTest(gpu_vivante)
 }
 
 load(qt_parts)

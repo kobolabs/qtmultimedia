@@ -1,43 +1,43 @@
 /****************************************************************************
 **
-** Copyright (C) 2013 Digia Plc and/or its subsidiary(-ies).
-** Contact: http://www.qt-project.org/legal
+** Copyright (C) 2015 The Qt Company Ltd.
+** Contact: http://www.qt.io/licensing/
 **
 ** This file is part of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL$
+** $QT_BEGIN_LICENSE:LGPL21$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and Digia.  For licensing terms and
-** conditions see http://qt.digia.com/licensing.  For further information
-** use the contact form at http://qt.digia.com/contact-us.
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see http://www.qt.io/terms-conditions. For further
+** information use the contact form at http://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU Lesser General Public License version 2.1 requirements
-** will be met: http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 2.1 or version 3 as published by the Free
+** Software Foundation and appearing in the file LICENSE.LGPLv21 and
+** LICENSE.LGPLv3 included in the packaging of this file. Please review the
+** following information to ensure the GNU Lesser General Public License
+** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
+** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
 **
-** In addition, as a special exception, Digia gives you certain additional
-** rights.  These rights are described in the Digia Qt LGPL Exception
+** As a special exception, The Qt Company gives you certain additional
+** rights. These rights are described in The Qt Company LGPL Exception
 ** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3.0 as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU General Public License version 3.0 requirements will be
-** met: http://www.gnu.org/copyleft/gpl.html.
-**
 **
 ** $QT_END_LICENSE$
 **
 ****************************************************************************/
+
+#include <dshow.h>
+#ifdef min
+#undef min
+#endif
+#ifdef max
+#undef max
+#endif
 
 #include <QtMultimedia/qmediametadata.h>
 #include <QtCore/qcoreapplication.h>
@@ -45,7 +45,6 @@
 #include <qdatetime.h>
 #include <qimage.h>
 
-#include <dshow.h>
 #include <initguid.h>
 #include <qnetwork.h>
 
@@ -104,75 +103,85 @@ static q_SHCreateItemFromParsingName sHCreateItemFromParsingName = 0;
 #endif
 
 #ifndef QT_NO_WMSDK
+
 namespace
 {
-    struct QWMMetaDataKeyLookup
+    struct QWMMetaDataKey
     {
-        QString key;
-        const wchar_t *token;
+        QString qtName;
+        const wchar_t *wmName;
+
+        QWMMetaDataKey(const QString &qtn, const wchar_t *wmn) : qtName(qtn), wmName(wmn) { }
     };
 }
 
-static const QWMMetaDataKeyLookup qt_wmMetaDataKeys[] =
+typedef QList<QWMMetaDataKey> QWMMetaDataKeys;
+Q_GLOBAL_STATIC(QWMMetaDataKeys, metadataKeys)
+
+static const QWMMetaDataKeys *qt_wmMetaDataKeys()
 {
-    { QMediaMetaData::Title, L"Title" },
-    { QMediaMetaData::SubTitle, L"WM/SubTitle" },
-    { QMediaMetaData::Author, L"Author" },
-    { QMediaMetaData::Comment, L"Comment" },
-    { QMediaMetaData::Description, L"Description" },
-    { QMediaMetaData::Category, L"WM/Category" },
-    { QMediaMetaData::Genre, L"WM/Genre" },
-    //{ QMediaMetaData::Date, 0 },
-    { QMediaMetaData::Year, L"WM/Year" },
-    { QMediaMetaData::UserRating, L"Rating" },
-    //{ QMediaMetaData::MetaDatawords, 0 },
-    { QMediaMetaData::Language, L"WM/Language" },
-    { QMediaMetaData::Publisher, L"WM/Publisher" },
-    { QMediaMetaData::Copyright, L"Copyright" },
-    { QMediaMetaData::ParentalRating, L"WM/ParentalRating" },
-    //{ QMediaMetaData::RatingOrganisation, L"RatingOrganisation" },
+    if (metadataKeys->isEmpty()) {
+        metadataKeys->append(QWMMetaDataKey(QMediaMetaData::Title, L"Title"));
+        metadataKeys->append(QWMMetaDataKey(QMediaMetaData::SubTitle, L"WM/SubTitle"));
+        metadataKeys->append(QWMMetaDataKey(QMediaMetaData::Author, L"Author"));
+        metadataKeys->append(QWMMetaDataKey(QMediaMetaData::Comment, L"Comment"));
+        metadataKeys->append(QWMMetaDataKey(QMediaMetaData::Description, L"Description"));
+        metadataKeys->append(QWMMetaDataKey(QMediaMetaData::Category, L"WM/Category"));
+        metadataKeys->append(QWMMetaDataKey(QMediaMetaData::Genre, L"WM/Genre"));
+        //metadataKeys->append(QWMMetaDataKey(QMediaMetaData::Date, 0));
+        metadataKeys->append(QWMMetaDataKey(QMediaMetaData::Year, L"WM/Year"));
+        metadataKeys->append(QWMMetaDataKey(QMediaMetaData::UserRating, L"Rating"));
+        //metadataKeys->append(QWMMetaDataKey(QMediaMetaData::MetaDatawords, 0));
+        metadataKeys->append(QWMMetaDataKey(QMediaMetaData::Language, L"WM/Language"));
+        metadataKeys->append(QWMMetaDataKey(QMediaMetaData::Publisher, L"WM/Publisher"));
+        metadataKeys->append(QWMMetaDataKey(QMediaMetaData::Copyright, L"Copyright"));
+        metadataKeys->append(QWMMetaDataKey(QMediaMetaData::ParentalRating, L"WM/ParentalRating"));
+        //metadataKeys->append(QWMMetaDataKey(QMediaMetaData::RatingOrganisation, L"RatingOrganisation"));
 
-    // Media
-    { QMediaMetaData::Size, L"FileSize" },
-    { QMediaMetaData::MediaType, L"MediaType" },
-    { QMediaMetaData::Duration, L"Duration" },
+        // Media
+        metadataKeys->append(QWMMetaDataKey(QMediaMetaData::Size, L"FileSize"));
+        metadataKeys->append(QWMMetaDataKey(QMediaMetaData::MediaType, L"MediaType"));
+        metadataKeys->append(QWMMetaDataKey(QMediaMetaData::Duration, L"Duration"));
 
-    // Audio
-    { QMediaMetaData::AudioBitRate, L"AudioBitRate" },
-    { QMediaMetaData::AudioCodec, L"AudioCodec" },
-    { QMediaMetaData::ChannelCount, L"ChannelCount" },
-    { QMediaMetaData::SampleRate, L"Frequency" },
+        // Audio
+        metadataKeys->append(QWMMetaDataKey(QMediaMetaData::AudioBitRate, L"AudioBitRate"));
+        metadataKeys->append(QWMMetaDataKey(QMediaMetaData::AudioCodec, L"AudioCodec"));
+        metadataKeys->append(QWMMetaDataKey(QMediaMetaData::ChannelCount, L"ChannelCount"));
+        metadataKeys->append(QWMMetaDataKey(QMediaMetaData::SampleRate, L"Frequency"));
 
-    // Music
-    { QMediaMetaData::AlbumTitle, L"WM/AlbumTitle" },
-    { QMediaMetaData::AlbumArtist, L"WM/AlbumArtist" },
-    { QMediaMetaData::ContributingArtist, L"Author" },
-    { QMediaMetaData::Composer, L"WM/Composer" },
-    { QMediaMetaData::Conductor, L"WM/Conductor" },
-    { QMediaMetaData::Lyrics, L"WM/Lyrics" },
-    { QMediaMetaData::Mood, L"WM/Mood" },
-    { QMediaMetaData::TrackNumber, L"WM/TrackNumber" },
-    //{ QMediaMetaData::TrackCount, 0 },
-    //{ QMediaMetaData::CoverArtUriSmall, 0 },
-    //{ QMediaMetaData::CoverArtUriLarge, 0 },
+        // Music
+        metadataKeys->append(QWMMetaDataKey(QMediaMetaData::AlbumTitle, L"WM/AlbumTitle"));
+        metadataKeys->append(QWMMetaDataKey(QMediaMetaData::AlbumArtist, L"WM/AlbumArtist"));
+        metadataKeys->append(QWMMetaDataKey(QMediaMetaData::ContributingArtist, L"Author"));
+        metadataKeys->append(QWMMetaDataKey(QMediaMetaData::Composer, L"WM/Composer"));
+        metadataKeys->append(QWMMetaDataKey(QMediaMetaData::Conductor, L"WM/Conductor"));
+        metadataKeys->append(QWMMetaDataKey(QMediaMetaData::Lyrics, L"WM/Lyrics"));
+        metadataKeys->append(QWMMetaDataKey(QMediaMetaData::Mood, L"WM/Mood"));
+        metadataKeys->append(QWMMetaDataKey(QMediaMetaData::TrackNumber, L"WM/TrackNumber"));
+        //metadataKeys->append(QWMMetaDataKey(QMediaMetaData::TrackCount, 0));
+        //metadataKeys->append(QWMMetaDataKey(QMediaMetaData::CoverArtUriSmall, 0));
+        //metadataKeys->append(QWMMetaDataKey(QMediaMetaData::CoverArtUriLarge, 0));
 
-    // Image/Video
-    { QMediaMetaData::Resolution, L"WM/VideoHeight" },
-    { QMediaMetaData::PixelAspectRatio, L"AspectRatioX" },
+        // Image/Video
+        metadataKeys->append(QWMMetaDataKey(QMediaMetaData::Resolution, L"WM/VideoHeight"));
+        metadataKeys->append(QWMMetaDataKey(QMediaMetaData::PixelAspectRatio, L"AspectRatioX"));
 
-    // Video
-    { QMediaMetaData::VideoFrameRate, L"WM/VideoFrameRate" },
-    { QMediaMetaData::VideoBitRate, L"VideoBitRate" },
-    { QMediaMetaData::VideoCodec, L"VideoCodec" },
+        // Video
+        metadataKeys->append(QWMMetaDataKey(QMediaMetaData::VideoFrameRate, L"WM/VideoFrameRate"));
+        metadataKeys->append(QWMMetaDataKey(QMediaMetaData::VideoBitRate, L"VideoBitRate"));
+        metadataKeys->append(QWMMetaDataKey(QMediaMetaData::VideoCodec, L"VideoCodec"));
 
-    //{ QMediaMetaData::PosterUri, 0 },
+        //metadataKeys->append(QWMMetaDataKey(QMediaMetaData::PosterUri, 0));
 
-    // Movie
-    { QMediaMetaData::ChapterNumber, L"ChapterNumber" },
-    { QMediaMetaData::Director, L"WM/Director" },
-    { QMediaMetaData::LeadPerformer, L"LeadPerformer" },
-    { QMediaMetaData::Writer, L"WM/Writer" },
-};
+        // Movie
+        metadataKeys->append(QWMMetaDataKey(QMediaMetaData::ChapterNumber, L"ChapterNumber"));
+        metadataKeys->append(QWMMetaDataKey(QMediaMetaData::Director, L"WM/Director"));
+        metadataKeys->append(QWMMetaDataKey(QMediaMetaData::LeadPerformer, L"LeadPerformer"));
+        metadataKeys->append(QWMMetaDataKey(QMediaMetaData::Writer, L"WM/Writer"));
+    }
+
+    return metadataKeys;
+}
 
 static QVariant getValue(IWMHeaderInfo *header, const wchar_t *key)
 {
@@ -255,7 +264,7 @@ static QVariant getValue(IWMHeaderInfo *header, const wchar_t *key)
                 WORD word;
                 if (header->GetAttributeByName(
                         &streamNumber,
-                        key, 
+                        key,
                         &type,
                         reinterpret_cast<BYTE *>(&word),
                         &size) == S_OK) {
@@ -360,7 +369,18 @@ static QString convertBSTR(BSTR *string)
     return value;
 }
 
-void DirectShowMetaDataControl::updateGraph(IFilterGraph2 *graph, IBaseFilter *source, const QString &fileSrc)
+void DirectShowMetaDataControl::reset()
+{
+    bool hadMetadata = !m_metadata.isEmpty();
+    m_metadata.clear();
+
+    setMetadataAvailable(false);
+
+    if (hadMetadata)
+        emit metaDataChanged();
+}
+
+void DirectShowMetaDataControl::updateMetadata(IFilterGraph2 *graph, IBaseFilter *source, const QString &fileSrc)
 {
     m_metadata.clear();
 
@@ -491,32 +511,29 @@ void DirectShowMetaDataControl::updateGraph(IFilterGraph2 *graph, IBaseFilter *s
     IWMHeaderInfo *info = com_cast<IWMHeaderInfo>(source, IID_IWMHeaderInfo);
 
     if (info) {
-        static const int  count = sizeof(qt_wmMetaDataKeys) / sizeof(QWMMetaDataKeyLookup);
-        for (int i = 0; i < count; ++i) {
-            QVariant var = getValue(info, qt_wmMetaDataKeys[i].token);
+        Q_FOREACH (const QWMMetaDataKey &key, *qt_wmMetaDataKeys()) {
+            QVariant var = getValue(info, key.wmName);
             if (var.isValid()) {
-                QString key = qt_wmMetaDataKeys[i].key;
-
-                if (key == QMediaMetaData::Duration) {
+                if (key.qtName == QMediaMetaData::Duration) {
                     // duration is provided in 100-nanosecond units, convert to milliseconds
                     var = (var.toLongLong() + 10000) / 10000;
-                } else if (key == QMediaMetaData::Resolution) {
+                } else if (key.qtName == QMediaMetaData::Resolution) {
                     QSize res;
                     res.setHeight(var.toUInt());
                     res.setWidth(getValue(info, L"WM/VideoWidth").toUInt());
                     var = res;
-                } else if (key == QMediaMetaData::VideoFrameRate) {
+                } else if (key.qtName == QMediaMetaData::VideoFrameRate) {
                     var = var.toReal() / 1000.f;
-                } else if (key == QMediaMetaData::PixelAspectRatio) {
+                } else if (key.qtName == QMediaMetaData::PixelAspectRatio) {
                     QSize aspectRatio;
                     aspectRatio.setWidth(var.toUInt());
                     aspectRatio.setHeight(getValue(info, L"AspectRatioY").toUInt());
                     var = aspectRatio;
-                } else if (key == QMediaMetaData::UserRating) {
+                } else if (key.qtName == QMediaMetaData::UserRating) {
                     var = (var.toUInt() - 1) / qreal(98) * 100;
                 }
 
-                m_metadata.insert(key, var);
+                m_metadata.insert(key.qtName, var);
             }
         }
 
@@ -569,13 +586,19 @@ void DirectShowMetaDataControl::customEvent(QEvent *event)
     if (event->type() == QEvent::Type(MetaDataChanged)) {
         event->accept();
 
-        bool oldAvailable = m_available;
-        m_available = !m_metadata.isEmpty();
-        if (m_available != oldAvailable)
-            emit metaDataAvailableChanged(m_available);
+        setMetadataAvailable(!m_metadata.isEmpty());
 
         emit metaDataChanged();
     } else {
         QMetaDataReaderControl::customEvent(event);
     }
+}
+
+void DirectShowMetaDataControl::setMetadataAvailable(bool available)
+{
+    if (m_available == available)
+        return;
+
+    m_available = available;
+    emit metaDataAvailableChanged(m_available);
 }

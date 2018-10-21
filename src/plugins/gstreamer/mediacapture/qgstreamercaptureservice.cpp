@@ -1,39 +1,31 @@
 /****************************************************************************
 **
-** Copyright (C) 2013 Digia Plc and/or its subsidiary(-ies).
-** Contact: http://www.qt-project.org/legal
+** Copyright (C) 2015 The Qt Company Ltd.
+** Contact: http://www.qt.io/licensing/
 **
 ** This file is part of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL$
+** $QT_BEGIN_LICENSE:LGPL21$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and Digia.  For licensing terms and
-** conditions see http://qt.digia.com/licensing.  For further information
-** use the contact form at http://qt.digia.com/contact-us.
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see http://www.qt.io/terms-conditions. For further
+** information use the contact form at http://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU Lesser General Public License version 2.1 requirements
-** will be met: http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 2.1 or version 3 as published by the Free
+** Software Foundation and appearing in the file LICENSE.LGPLv21 and
+** LICENSE.LGPLv3 included in the packaging of this file. Please review the
+** following information to ensure the GNU Lesser General Public License
+** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
+** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
 **
-** In addition, as a special exception, Digia gives you certain additional
-** rights.  These rights are described in the Digia Qt LGPL Exception
+** As a special exception, The Qt Company gives you certain additional
+** rights. These rights are described in The Qt Company LGPL Exception
 ** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3.0 as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU General Public License version 3.0 requirements will be
-** met: http://www.gnu.org/copyleft/gpl.html.
-**
 **
 ** $QT_END_LICENSE$
 **
@@ -48,8 +40,11 @@
 #include "qgstreamerimageencode.h"
 #include "qgstreamercameracontrol.h"
 #include <private/qgstreamerbushelper_p.h>
-#include "qgstreamerv4l2input.h"
 #include "qgstreamercapturemetadatacontrol.h"
+
+#if defined(USE_GSTREAMER_CAMERA)
+#include "qgstreamerv4l2input.h"
+#endif
 
 #include "qgstreamerimagecapturecontrol.h"
 #include <private/qgstreameraudioinputselector_p.h>
@@ -67,29 +62,30 @@
 
 QT_BEGIN_NAMESPACE
 
-QGstreamerCaptureService::QGstreamerCaptureService(const QString &service, QObject *parent):
-    QMediaService(parent)
-{
-    m_captureSession = 0;
-    m_cameraControl = 0;
-    m_metaDataControl = 0;
-
-    m_videoInput = 0;
-    m_audioInputSelector = 0;
-    m_videoInputDevice = 0;
-
-    m_videoOutput = 0;
-    m_videoRenderer = 0;
-    m_videoWindow = 0;
-#if defined(HAVE_WIDGETS)
-    m_videoWidgetControl = 0;
+QGstreamerCaptureService::QGstreamerCaptureService(const QString &service, QObject *parent)
+    : QMediaService(parent)
+    , m_captureSession(0)
+    , m_cameraControl(0)
+#if defined(USE_GSTREAMER_CAMERA)
+    , m_videoInput(0)
 #endif
-    m_imageCaptureControl = 0;
-
+    , m_metaDataControl(0)
+    , m_audioInputSelector(0)
+    , m_videoInputDevice(0)
+    , m_videoOutput(0)
+    , m_videoRenderer(0)
+    , m_videoWindow(0)
+#if defined(HAVE_WIDGETS)
+    , m_videoWidgetControl(0)
+#endif
+    , m_imageCaptureControl(0)
+    , m_audioProbeControl(0)
+{
     if (service == Q_MEDIASERVICE_AUDIOSOURCE) {
         m_captureSession = new QGstreamerCaptureSession(QGstreamerCaptureSession::Audio, this);
     }
 
+#if defined(USE_GSTREAMER_CAMERA)
    if (service == Q_MEDIASERVICE_CAMERA) {
         m_captureSession = new QGstreamerCaptureSession(QGstreamerCaptureSession::AudioAndVideo, this);
         m_cameraControl = new QGstreamerCameraControl(m_captureSession);
@@ -104,13 +100,28 @@ QGstreamerCaptureService::QGstreamerCaptureService(const QString &service, QObje
             m_videoInput->setDevice(m_videoInputDevice->deviceName(m_videoInputDevice->selectedDevice()));
 
         m_videoRenderer = new QGstreamerVideoRenderer(this);
+
         m_videoWindow = new QGstreamerVideoWindow(this);
+        // If the GStreamer video sink is not available, don't provide the video window control since
+        // it won't work anyway.
+        if (!m_videoWindow->videoSink()) {
+            delete m_videoWindow;
+            m_videoWindow = 0;
+        }
 
 #if defined(HAVE_WIDGETS)
         m_videoWidgetControl = new QGstreamerVideoWidgetControl(this);
+
+        // If the GStreamer video sink is not available, don't provide the video widget control since
+        // it won't work anyway. QVideoWidget will fall back to QVideoRendererControl in that case.
+        if (!m_videoWidgetControl->videoSink()) {
+            delete m_videoWidgetControl;
+            m_videoWidgetControl = 0;
+        }
 #endif
         m_imageCaptureControl = new QGstreamerImageCaptureControl(m_captureSession);
     }
+#endif
 
     m_audioInputSelector = new QGstreamerAudioInputSelector(this);
     connect(m_audioInputSelector, SIGNAL(activeInputChanged(QString)), m_captureSession, SLOT(setCaptureDevice(QString)));
@@ -164,12 +175,12 @@ QMediaControl *QGstreamerCaptureService::requestControl(const char *name)
         return m_imageCaptureControl;
 
     if (qstrcmp(name,QMediaAudioProbeControl_iid) == 0) {
-        if (m_captureSession) {
-            QGstreamerAudioProbeControl *probe = new QGstreamerAudioProbeControl(this);
-            m_captureSession->addProbe(probe);
-            return probe;
+        if (!m_audioProbeControl) {
+            m_audioProbeControl = new QGstreamerAudioProbeControl(this);
+            m_captureSession->addProbe(m_audioProbeControl);
         }
-        return 0;
+        m_audioProbeControl->ref.ref();
+        return m_audioProbeControl;
     }
 
     if (!m_videoOutput) {
@@ -195,17 +206,15 @@ QMediaControl *QGstreamerCaptureService::requestControl(const char *name)
 
 void QGstreamerCaptureService::releaseControl(QMediaControl *control)
 {
-    if (control && control == m_videoOutput) {
+    if (!control) {
+        return;
+    } else if (control == m_videoOutput) {
         m_videoOutput = 0;
         m_captureSession->setVideoPreview(0);
-    }
-
-    QGstreamerAudioProbeControl* audioProbe = qobject_cast<QGstreamerAudioProbeControl*>(control);
-    if (audioProbe) {
-        if (m_captureSession)
-            m_captureSession->removeProbe(audioProbe);
-        delete audioProbe;
-        return;
+    } else if (control == m_audioProbeControl && !m_audioProbeControl->ref.deref()) {
+        m_captureSession->removeProbe(m_audioProbeControl);
+        delete m_audioProbeControl;
+        m_audioProbeControl = 0;
     }
 }
 

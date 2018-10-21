@@ -12,7 +12,6 @@ SOURCES += \
     $$PWD/qandroidcameraimagecapturecontrol.cpp \
     $$PWD/qandroidcameracapturedestinationcontrol.cpp \
     $$PWD/qandroidcameracapturebufferformatcontrol.cpp \
-    $$PWD/qandroidmediastoragelocation.cpp \
     $$PWD/qandroidcameraflashcontrol.cpp \
     $$PWD/qandroidcamerafocuscontrol.cpp \
     $$PWD/qandroidcameralockscontrol.cpp \
@@ -21,7 +20,10 @@ SOURCES += \
     $$PWD/qandroidaudioencodersettingscontrol.cpp \
     $$PWD/qandroidmediacontainercontrol.cpp \
     $$PWD/qandroidvideoencodersettingscontrol.cpp \
-    $$PWD/qandroidaudioinputselectorcontrol.cpp
+    $$PWD/qandroidaudioinputselectorcontrol.cpp \
+    $$PWD/qandroidmediavideoprobecontrol.cpp \
+    $$PWD/qandroidcamerainfocontrol.cpp \
+    $$PWD/qandroidcameravideorenderercontrol.cpp
 
 HEADERS += \
     $$PWD/qandroidcaptureservice.h \
@@ -35,7 +37,6 @@ HEADERS += \
     $$PWD/qandroidcameraimagecapturecontrol.h \
     $$PWD/qandroidcameracapturedestinationcontrol.h \
     $$PWD/qandroidcameracapturebufferformatcontrol.h \
-    $$PWD/qandroidmediastoragelocation.h \
     $$PWD/qandroidcameraflashcontrol.h \
     $$PWD/qandroidcamerafocuscontrol.h \
     $$PWD/qandroidcameralockscontrol.h \
@@ -44,4 +45,7 @@ HEADERS += \
     $$PWD/qandroidaudioencodersettingscontrol.h \
     $$PWD/qandroidmediacontainercontrol.h \
     $$PWD/qandroidvideoencodersettingscontrol.h \
-    $$PWD/qandroidaudioinputselectorcontrol.h
+    $$PWD/qandroidaudioinputselectorcontrol.h \
+    $$PWD/qandroidmediavideoprobecontrol.h \
+    $$PWD/qandroidcamerainfocontrol.h \
+    $$PWD/qandroidcameravideorenderercontrol.h

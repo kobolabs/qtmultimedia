@@ -1,39 +1,31 @@
 /****************************************************************************
 **
-** Copyright (C) 2013 Digia Plc and/or its subsidiary(-ies).
-** Contact: http://www.qt-project.org/legal
+** Copyright (C) 2015 The Qt Company Ltd.
+** Contact: http://www.qt.io/licensing/
 **
 ** This file is part of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL$
+** $QT_BEGIN_LICENSE:LGPL21$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and Digia.  For licensing terms and
-** conditions see http://qt.digia.com/licensing.  For further information
-** use the contact form at http://qt.digia.com/contact-us.
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see http://www.qt.io/terms-conditions. For further
+** information use the contact form at http://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU Lesser General Public License version 2.1 requirements
-** will be met: http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 2.1 or version 3 as published by the Free
+** Software Foundation and appearing in the file LICENSE.LGPLv21 and
+** LICENSE.LGPLv3 included in the packaging of this file. Please review the
+** following information to ensure the GNU Lesser General Public License
+** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
+** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
 **
-** In addition, as a special exception, Digia gives you certain additional
-** rights.  These rights are described in the Digia Qt LGPL Exception
+** As a special exception, The Qt Company gives you certain additional
+** rights. These rights are described in The Qt Company LGPL Exception
 ** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3.0 as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU General Public License version 3.0 requirements will be
-** met: http://www.gnu.org/copyleft/gpl.html.
-**
 **
 ** $QT_END_LICENSE$
 **
@@ -61,18 +53,13 @@ QT_BEGIN_NAMESPACE
 Q_GLOBAL_STATIC_WITH_ARGS(QMediaPluginLoader, playlistIOLoader,
         (QMediaPlaylistIOInterface_iid, QLatin1String("playlistformats"), Qt::CaseInsensitive))
 
-namespace
+static void qRegisterMediaPlaylistMetaTypes()
 {
-    class QMediaPlaylistPrivateRegisterMetaTypes
-    {
-    public:
-        QMediaPlaylistPrivateRegisterMetaTypes()
-        {
-            qRegisterMetaType<QMediaPlaylist::Error>();
-            qRegisterMetaType<QMediaPlaylist::PlaybackMode>();
-        }
-    } _registerMetaTypes;
+    qRegisterMetaType<QMediaPlaylist::Error>();
+    qRegisterMetaType<QMediaPlaylist::PlaybackMode>();
 }
+
+Q_CONSTRUCTOR_FUNCTION(qRegisterMediaPlaylistMetaTypes)
 
 
 /*!
@@ -88,7 +75,7 @@ namespace
     like QMediaPlayer.
 
     QMediaPlaylist allows to access the service intrinsic playlist functionality
-    if available, otherwise it provides the the local memory playlist implementation.
+    if available, otherwise it provides the local memory playlist implementation.
 
     \snippet multimedia-snippets/media.cpp Movie playlist
 
@@ -119,7 +106,7 @@ namespace
 
 
 /*!
-  Create a new playlist object for with the given \a parent.
+  Create a new playlist object with the given \a parent.
 */
 
 QMediaPlaylist::QMediaPlaylist(QObject *parent)
@@ -181,10 +168,13 @@ bool QMediaPlaylist::setMediaObject(QMediaObject *mediaObject)
         newControl = d->networkPlaylistControl;
 
     if (d->control != newControl) {
-        int oldSize = 0;
+        int removedStart = -1;
+        int removedEnd = -1;
+        int insertedStart = -1;
+        int insertedEnd = -1;
+
         if (d->control) {
             QMediaPlaylistProvider *playlist = d->control->playlistProvider();
-            oldSize = playlist->mediaCount();
             disconnect(playlist, SIGNAL(loadFailed(QMediaPlaylist::Error,QString)),
                     this, SLOT(_q_loadFailed(QMediaPlaylist::Error,QString)));
 
@@ -202,6 +192,12 @@ bool QMediaPlaylist::setMediaObject(QMediaObject *mediaObject)
                     this, SIGNAL(currentIndexChanged(int)));
             disconnect(d->control, SIGNAL(currentMediaChanged(QMediaContent)),
                     this, SIGNAL(currentMediaChanged(QMediaContent)));
+
+            // Copy playlist items, sync playback mode and sync current index between
+            // old control and new control
+            d->syncControls(d->control, newControl,
+                            &removedStart, &removedEnd,
+                            &insertedStart, &insertedEnd);
 
             if (d->mediaObject)
                 d->mediaObject->service()->releaseControl(d->control);
@@ -227,12 +223,14 @@ bool QMediaPlaylist::setMediaObject(QMediaObject *mediaObject)
         connect(d->control, SIGNAL(currentMediaChanged(QMediaContent)),
                 this, SIGNAL(currentMediaChanged(QMediaContent)));
 
-        if (oldSize)
-            emit mediaRemoved(0, oldSize-1);
+        if (removedStart != -1 && removedEnd != -1) {
+            emit mediaAboutToBeRemoved(removedStart, removedEnd);
+            emit mediaRemoved(removedStart, removedEnd);
+        }
 
-        if (playlist->mediaCount()) {
-            emit mediaAboutToBeInserted(0,playlist->mediaCount()-1);
-            emit mediaInserted(0,playlist->mediaCount()-1);
+        if (insertedStart != -1 && insertedEnd != -1) {
+            emit mediaAboutToBeInserted(insertedStart, insertedEnd);
+            emit mediaInserted(insertedStart, insertedEnd);
         }
     }
 
@@ -315,7 +313,7 @@ int QMediaPlaylist::mediaCount() const
 }
 
 /*!
-  Returns true if the playlist contains no items; otherwise returns false.
+  Returns true if the playlist contains no items, otherwise returns false.
 
   \sa mediaCount()
   */
@@ -325,7 +323,7 @@ bool QMediaPlaylist::isEmpty() const
 }
 
 /*!
-  Returns true if the playlist can be modified; otherwise returns false.
+  Returns true if the playlist can be modified, otherwise returns false.
 
   \sa mediaCount()
   */
@@ -346,7 +344,7 @@ QMediaContent QMediaPlaylist::media(int index) const
 /*!
   Append the media \a content to the playlist.
 
-  Returns true if the operation is successful, otherwise return false.
+  Returns true if the operation is successful, otherwise returns false.
   */
 bool QMediaPlaylist::addMedia(const QMediaContent &content)
 {
@@ -356,7 +354,7 @@ bool QMediaPlaylist::addMedia(const QMediaContent &content)
 /*!
   Append multiple media content \a items to the playlist.
 
-  Returns true if the operation is successful, otherwise return false.
+  Returns true if the operation is successful, otherwise returns false.
   */
 bool QMediaPlaylist::addMedia(const QList<QMediaContent> &items)
 {
@@ -366,23 +364,25 @@ bool QMediaPlaylist::addMedia(const QList<QMediaContent> &items)
 /*!
   Insert the media \a content to the playlist at position \a pos.
 
-  Returns true if the operation is successful, otherwise false.
+  Returns true if the operation is successful, otherwise returns false.
 */
 
 bool QMediaPlaylist::insertMedia(int pos, const QMediaContent &content)
 {
-    return d_func()->playlist()->insertMedia(pos, content);
+    QMediaPlaylistProvider *playlist = d_func()->playlist();
+    return playlist->insertMedia(qBound(0, pos, playlist->mediaCount()), content);
 }
 
 /*!
   Insert multiple media content \a items to the playlist at position \a pos.
 
-  Returns true if the operation is successful, otherwise false.
+  Returns true if the operation is successful, otherwise returns false.
 */
 
 bool QMediaPlaylist::insertMedia(int pos, const QList<QMediaContent> &items)
 {
-    return d_func()->playlist()->insertMedia(pos, items);
+    QMediaPlaylistProvider *playlist = d_func()->playlist();
+    return playlist->insertMedia(qBound(0, pos, playlist->mediaCount()), items);
 }
 
 /*!
@@ -392,8 +392,11 @@ bool QMediaPlaylist::insertMedia(int pos, const QList<QMediaContent> &items)
   */
 bool QMediaPlaylist::removeMedia(int pos)
 {
-    Q_D(QMediaPlaylist);
-    return d->playlist()->removeMedia(pos);
+    QMediaPlaylistProvider *playlist = d_func()->playlist();
+    if (pos >= 0 && pos < playlist->mediaCount())
+        return playlist->removeMedia(pos);
+    else
+        return false;
 }
 
 /*!
@@ -403,8 +406,13 @@ bool QMediaPlaylist::removeMedia(int pos)
   */
 bool QMediaPlaylist::removeMedia(int start, int end)
 {
-    Q_D(QMediaPlaylist);
-    return d->playlist()->removeMedia(start, end);
+    QMediaPlaylistProvider *playlist = d_func()->playlist();
+    start = qMax(0, start);
+    end = qMin(end, playlist->mediaCount() - 1);
+    if (start <= end)
+        return playlist->removeMedia(start, end);
+    else
+        return false;
 }
 
 /*!
@@ -420,10 +428,12 @@ bool QMediaPlaylist::clear()
 
 bool QMediaPlaylistPrivate::readItems(QMediaPlaylistReader *reader)
 {
-    while (!reader->atEnd())
-        playlist()->addMedia(reader->readItem());
+    QList<QMediaContent> items;
 
-    return true;
+    while (!reader->atEnd())
+        items.append(reader->readItem());
+
+    return playlist()->addMedia(items);
 }
 
 bool QMediaPlaylistPrivate::writeItems(QMediaPlaylistWriter *writer)
@@ -434,6 +444,53 @@ bool QMediaPlaylistPrivate::writeItems(QMediaPlaylistWriter *writer)
     }
     writer->close();
     return true;
+}
+
+/*!
+ * \internal
+ * Copy playlist items, sync playback mode and sync current index between old control and new control
+*/
+void QMediaPlaylistPrivate::syncControls(QMediaPlaylistControl *oldControl, QMediaPlaylistControl *newControl,
+                                         int *removedStart, int *removedEnd,
+                                         int *insertedStart, int *insertedEnd)
+{
+    Q_ASSERT(oldControl != NULL && newControl != NULL);
+    Q_ASSERT(removedStart != NULL && removedEnd != NULL
+            && insertedStart != NULL && insertedEnd != NULL);
+
+    QMediaPlaylistProvider *oldPlaylist = oldControl->playlistProvider();
+    QMediaPlaylistProvider *newPlaylist = newControl->playlistProvider();
+
+    Q_ASSERT(oldPlaylist != NULL && newPlaylist != NULL);
+
+    *removedStart = -1;
+    *removedEnd = -1;
+    *insertedStart = -1;
+    *insertedEnd = -1;
+
+    if (newPlaylist->isReadOnly()) {
+        // we can't transfer the items from the old control.
+        // Report these items as removed.
+        if (oldPlaylist->mediaCount() > 0) {
+            *removedStart = 0;
+            *removedEnd = oldPlaylist->mediaCount() - 1;
+        }
+        // The new control might have some items that can't be cleared.
+        // Report these as inserted.
+        if (newPlaylist->mediaCount() > 0) {
+            *insertedStart = 0;
+            *insertedEnd = newPlaylist->mediaCount() - 1;
+        }
+    } else {
+        const int oldPlaylistSize = oldPlaylist->mediaCount();
+
+        newPlaylist->clear();
+        for (int i = 0; i < oldPlaylistSize; ++i)
+            newPlaylist->addMedia(oldPlaylist->media(i));
+    }
+
+    newControl->setPlaybackMode(oldControl->playbackMode());
+    newControl->setCurrentIndex(oldControl->currentIndex());
 }
 
 /*!

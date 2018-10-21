@@ -1,39 +1,31 @@
 /****************************************************************************
 **
-** Copyright (C) 2013 Digia Plc and/or its subsidiary(-ies).
-** Contact: http://www.qt-project.org/legal
+** Copyright (C) 2015 The Qt Company Ltd.
+** Contact: http://www.qt.io/licensing/
 **
 ** This file is part of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL$
+** $QT_BEGIN_LICENSE:LGPL21$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and Digia.  For licensing terms and
-** conditions see http://qt.digia.com/licensing.  For further information
-** use the contact form at http://qt.digia.com/contact-us.
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see http://www.qt.io/terms-conditions. For further
+** information use the contact form at http://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU Lesser General Public License version 2.1 requirements
-** will be met: http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 2.1 or version 3 as published by the Free
+** Software Foundation and appearing in the file LICENSE.LGPLv21 and
+** LICENSE.LGPLv3 included in the packaging of this file. Please review the
+** following information to ensure the GNU Lesser General Public License
+** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
+** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
 **
-** In addition, as a special exception, Digia gives you certain additional
-** rights.  These rights are described in the Digia Qt LGPL Exception
+** As a special exception, The Qt Company gives you certain additional
+** rights. These rights are described in The Qt Company LGPL Exception
 ** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3.0 as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU General Public License version 3.0 requirements will be
-** met: http://www.gnu.org/copyleft/gpl.html.
-**
 **
 ** $QT_END_LICENSE$
 **
@@ -56,6 +48,7 @@
 #include <QtCore/qbasictimer.h>
 #include <QtQml/qqmlparserstatus.h>
 #include <QtQml/qqml.h>
+#include <QtQml/qjsvalue.h>
 
 #include <qmediaplayer.h>
 
@@ -66,6 +59,7 @@ class QMediaPlayerControl;
 class QMediaService;
 class QMediaServiceProvider;
 class QMetaDataReaderControl;
+class QDeclarativePlaylist;
 class QDeclarativeMediaBaseAnimation;
 class QDeclarativeMediaMetaData;
 class QMediaAvailabilityControl;
@@ -74,6 +68,7 @@ class QDeclarativeAudio : public QObject, public QQmlParserStatus
 {
     Q_OBJECT
     Q_PROPERTY(QUrl source READ source WRITE setSource NOTIFY sourceChanged)
+    Q_PROPERTY(QDeclarativePlaylist *playlist READ playlist WRITE setPlaylist NOTIFY playlistChanged REVISION 1)
     Q_PROPERTY(int loops READ loopCount WRITE setLoopCount NOTIFY loopCountChanged)
     Q_PROPERTY(PlaybackState playbackState READ playbackState NOTIFY playbackStateChanged)
     Q_PROPERTY(bool autoPlay READ autoPlay WRITE setAutoPlay NOTIFY autoPlayChanged)
@@ -93,11 +88,13 @@ class QDeclarativeAudio : public QObject, public QQmlParserStatus
     Q_PROPERTY(QDeclarativeMediaMetaData *metaData READ metaData CONSTANT)
     Q_PROPERTY(QObject *mediaObject READ mediaObject NOTIFY mediaObjectChanged SCRIPTABLE false DESIGNABLE false)
     Q_PROPERTY(Availability availability READ availability NOTIFY availabilityChanged)
+    Q_PROPERTY(AudioRole audioRole READ audioRole WRITE setAudioRole NOTIFY audioRoleChanged REVISION 1)
     Q_ENUMS(Status)
     Q_ENUMS(Error)
     Q_ENUMS(Loop)
     Q_ENUMS(PlaybackState)
     Q_ENUMS(Availability)
+    Q_ENUMS(AudioRole)
     Q_INTERFACES(QQmlParserStatus)
 public:
     enum Status
@@ -142,6 +139,19 @@ public:
         ResourceMissing = QMultimedia::ResourceError
     };
 
+    enum AudioRole {
+        UnknownRole = QAudio::UnknownRole,
+        AccessibilityRole = QAudio::AccessibilityRole,
+        AlarmRole = QAudio::AlarmRole,
+        GameRole = QAudio::GameRole,
+        MusicRole = QAudio::MusicRole,
+        NotificationRole = QAudio::NotificationRole,
+        RingtoneRole = QAudio::RingtoneRole,
+        SonificationRole = QAudio::SonificationRole,
+        VideoRole = QAudio::VideoRole,
+        VoiceCommunicationRole = QAudio::VoiceCommunicationRole
+    };
+
     QDeclarativeAudio(QObject *parent = 0);
     ~QDeclarativeAudio();
 
@@ -160,8 +170,14 @@ public:
 
     Availability availability() const;
 
+    AudioRole audioRole() const;
+    void setAudioRole(AudioRole audioRole);
+
     QUrl source() const;
     void setSource(const QUrl &url);
+
+    QDeclarativePlaylist *playlist() const;
+    void setPlaylist(QDeclarativePlaylist *playlist);
 
     int loopCount() const;
     void setLoopCount(int loopCount);
@@ -199,7 +215,11 @@ public Q_SLOTS:
     void stop();
     void seek(int position);
 
+    Q_REVISION(1) QJSValue supportedAudioRoles() const;
+
 Q_SIGNALS:
+    Q_REVISION(1) void playlistChanged();
+
     void sourceChanged();
     void autoLoadChanged();
     void loopCountChanged();
@@ -226,6 +246,8 @@ Q_SIGNALS:
     void seekableChanged();
     void playbackRateChanged();
 
+    Q_REVISION(1) void audioRoleChanged();
+
     void availabilityChanged(Availability availability);
 
     void errorChanged();
@@ -237,20 +259,24 @@ private Q_SLOTS:
     void _q_error(QMediaPlayer::Error);
     void _q_availabilityChanged(QMultimedia::AvailabilityStatus);
     void _q_statusChanged();
+    void _q_mediaChanged(const QMediaContent&);
 
 private:
     Q_DISABLE_COPY(QDeclarativeAudio)
 
+    QDeclarativePlaylist *m_playlist;
     bool m_autoPlay;
     bool m_autoLoad;
     bool m_loaded;
     bool m_muted;
     bool m_complete;
+    bool m_emitPlaylistChanged;
     int m_loopCount;
     int m_runningCount;
     int m_position;
     qreal m_vol;
     qreal m_playbackRate;
+    AudioRole m_audioRole;
 
     QMediaPlayer::State m_playbackState;
     QMediaPlayer::MediaStatus m_status;

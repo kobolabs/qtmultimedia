@@ -1,39 +1,31 @@
 /****************************************************************************
 **
-** Copyright (C) 2013 Digia Plc and/or its subsidiary(-ies).
-** Contact: http://www.qt-project.org/legal
+** Copyright (C) 2015 The Qt Company Ltd and/or its subsidiary(-ies).
+** Contact: http://www.qt.io/licensing/
 **
 ** This file is part of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL$
+** $QT_BEGIN_LICENSE:LGPL21$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and Digia.  For licensing terms and
-** conditions see http://qt.digia.com/licensing.  For further information
-** use the contact form at http://qt.digia.com/contact-us.
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see http://www.qt.io/terms-conditions. For further
+** information use the contact form at http://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU Lesser General Public License version 2.1 requirements
-** will be met: http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 2.1 or version 3 as published by the Free
+** Software Foundation and appearing in the file LICENSE.LGPLv21 and
+** LICENSE.LGPLv3 included in the packaging of this file. Please review the
+** following information to ensure the GNU Lesser General Public License
+** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
+** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
 **
-** In addition, as a special exception, Digia gives you certain additional
-** rights.  These rights are described in the Digia Qt LGPL Exception
+** As a special exception, The Qt Company gives you certain additional
+** rights. These rights are described in The Qt Company LGPL Exception
 ** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3.0 as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU General Public License version 3.0 requirements will be
-** met: http://www.gnu.org/copyleft/gpl.html.
-**
 **
 ** $QT_END_LICENSE$
 **
@@ -83,6 +75,41 @@ QStringList AVFMediaPlayerMetaDataControl::availableMetaData() const
     return m_tags.keys();
 }
 
+static QString itemKey(AVMetadataItem *item)
+{
+    NSString *keyString = [item commonKey];
+
+    if (keyString.length != 0) {
+        if ([keyString isEqualToString:AVMetadataCommonKeyTitle]) {
+            return QMediaMetaData::Title;
+        } else if ([keyString isEqualToString: AVMetadataCommonKeySubject]) {
+            return QMediaMetaData::SubTitle;
+        } else if ([keyString isEqualToString: AVMetadataCommonKeyDescription]) {
+            return QMediaMetaData::Description;
+        } else if ([keyString isEqualToString: AVMetadataCommonKeyPublisher]) {
+            return QMediaMetaData::Publisher;
+        } else if ([keyString isEqualToString: AVMetadataCommonKeyCreationDate]) {
+            return QMediaMetaData::Date;
+        } else if ([keyString isEqualToString: AVMetadataCommonKeyType]) {
+            return QMediaMetaData::MediaType;
+        } else if ([keyString isEqualToString: AVMetadataCommonKeyLanguage]) {
+            return QMediaMetaData::Language;
+        } else if ([keyString isEqualToString: AVMetadataCommonKeyCopyrights]) {
+            return QMediaMetaData::Copyright;
+        } else if ([keyString isEqualToString: AVMetadataCommonKeyAlbumName]) {
+            return QMediaMetaData::AlbumTitle;
+        } else if ([keyString isEqualToString: AVMetadataCommonKeyAuthor]) {
+            return QMediaMetaData::Author;
+        } else if ([keyString isEqualToString: AVMetadataCommonKeyArtist]) {
+            return QMediaMetaData::ContributingArtist;
+        } else if ([keyString isEqualToString: AVMetadataCommonKeyArtwork]) {
+            return QMediaMetaData::PosterUrl;
+        }
+    }
+
+    return QString();
+}
+
 void AVFMediaPlayerMetaDataControl::updateTags()
 {
 #ifdef QT_DEBUG_AVF
@@ -91,67 +118,38 @@ void AVFMediaPlayerMetaDataControl::updateTags()
     AVAsset *currentAsset = (AVAsset*)m_session->currentAssetHandle();
 
     //Don't read the tags from the same asset more than once
-    if (currentAsset == m_asset) {
+    if (currentAsset == m_asset)
         return;
-    }
 
     m_asset = currentAsset;
 
+    QVariantMap oldTags = m_tags;
     //Since we've changed assets, clear old tags
     m_tags.clear();
+    bool changed = false;
 
-    NSArray *metadataFormats = [currentAsset availableMetadataFormats];
-    for ( NSString *format in metadataFormats) {
-#ifdef QT_DEBUG_AVF
-        qDebug() << "format: " << [format UTF8String];
-#endif
-        NSArray *metadataItems = [currentAsset metadataForFormat:format];
-        for (AVMetadataItem* item in metadataItems) {
-            NSString *keyString = [item commonKey];
-            NSString *value = [item stringValue];
+    // TODO: also process ID3, iTunes and QuickTime metadata
 
-            if (keyString.length != 0) {
-                //Process "commonMetadata" tags here:
-                if ([keyString isEqualToString:AVMetadataCommonKeyTitle]) {
-                    m_tags.insert(QMediaMetaData::Title, QString([value UTF8String]));
-                } else if ([keyString isEqualToString: AVMetadataCommonKeyCreator]) {
-                    m_tags.insert(QMediaMetaData::Author, QString([value UTF8String]));
-                } else if ([keyString isEqualToString: AVMetadataCommonKeySubject]) {
-                    m_tags.insert(QMediaMetaData::SubTitle, QString([value UTF8String]));
-                } else if ([keyString isEqualToString: AVMetadataCommonKeyDescription]) {
-                    m_tags.insert(QMediaMetaData::Description, QString([value UTF8String]));
-                } else if ([keyString isEqualToString: AVMetadataCommonKeyPublisher]) {
-                    m_tags.insert(QMediaMetaData::Publisher, QString([value UTF8String]));
-                } else if ([keyString isEqualToString: AVMetadataCommonKeyContributor]) {
-                    m_tags.insert(QMediaMetaData::ContributingArtist, QString([value UTF8String]));
-                } else if ([keyString isEqualToString: AVMetadataCommonKeyCreationDate]) {
-                    m_tags.insert(QMediaMetaData::Date, QString([value UTF8String]));
-                } else if ([keyString isEqualToString: AVMetadataCommonKeyType]) {
-                    m_tags.insert(QMediaMetaData::MediaType, QString([value UTF8String]));
-                } else if ([keyString isEqualToString: AVMetadataCommonKeyLanguage]) {
-                    m_tags.insert(QMediaMetaData::Language, QString([value UTF8String]));
-                } else if ([keyString isEqualToString: AVMetadataCommonKeyCopyrights]) {
-                    m_tags.insert(QMediaMetaData::Copyright, QString([value UTF8String]));
-                } else if ([keyString isEqualToString: AVMetadataCommonKeyAlbumName]) {
-                    m_tags.insert(QMediaMetaData::AlbumTitle, QString([value UTF8String]));
-                } else if ([keyString isEqualToString: AVMetadataCommonKeyAuthor]) {
-                    m_tags.insert(QMediaMetaData::Author, QString([value UTF8String]));
-                } else if ([keyString isEqualToString: AVMetadataCommonKeyArtist]) {
-                    m_tags.insert(QMediaMetaData::AlbumArtist, QString([value UTF8String]));
-                } else if ([keyString isEqualToString: AVMetadataCommonKeyArtwork]) {
-                    m_tags.insert(QMediaMetaData::PosterUrl, QString([value UTF8String]));
+    NSArray *metadataItems = [currentAsset commonMetadata];
+    for (AVMetadataItem* item in metadataItems) {
+        const QString key = itemKey(item);
+        if (!key.isEmpty()) {
+            const QString value = QString::fromNSString([item stringValue]);
+            if (!value.isNull()) {
+                m_tags.insert(key, value);
+                if (value != oldTags.value(key)) {
+                    changed = true;
+                    Q_EMIT metaDataChanged(key, value);
                 }
-            }
-
-            if ([format isEqualToString:AVMetadataFormatID3Metadata]) {
-                //TODO: Process ID3 metadata
-            } else if ([format isEqualToString:AVMetadataFormatiTunesMetadata]) {
-                //TODO: Process iTunes metadata
-            } else if ([format isEqualToString:AVMetadataFormatQuickTimeUserData]) {
-                //TODO: Process QuickTime metadata
             }
         }
     }
 
-    Q_EMIT metaDataChanged();
+    if (oldTags.isEmpty() != m_tags.isEmpty()) {
+        Q_EMIT metaDataAvailableChanged(!m_tags.isEmpty());
+        changed = true;
+    }
+
+    if (changed)
+        Q_EMIT metaDataChanged();
 }

@@ -1,39 +1,31 @@
 /****************************************************************************
 **
-** Copyright (C) 2013 Digia Plc and/or its subsidiary(-ies).
-** Contact: http://www.qt-project.org/legal
+** Copyright (C) 2015 The Qt Company Ltd.
+** Contact: http://www.qt.io/licensing/
 **
 ** This file is part of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL$
+** $QT_BEGIN_LICENSE:LGPL21$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and Digia.  For licensing terms and
-** conditions see http://qt.digia.com/licensing.  For further information
-** use the contact form at http://qt.digia.com/contact-us.
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see http://www.qt.io/terms-conditions. For further
+** information use the contact form at http://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU Lesser General Public License version 2.1 requirements
-** will be met: http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 2.1 or version 3 as published by the Free
+** Software Foundation and appearing in the file LICENSE.LGPLv21 and
+** LICENSE.LGPLv3 included in the packaging of this file. Please review the
+** following information to ensure the GNU Lesser General Public License
+** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
+** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
 **
-** In addition, as a special exception, Digia gives you certain additional
-** rights.  These rights are described in the Digia Qt LGPL Exception
+** As a special exception, The Qt Company gives you certain additional
+** rights. These rights are described in The Qt Company LGPL Exception
 ** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3.0 as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU General Public License version 3.0 requirements will be
-** met: http://www.gnu.org/copyleft/gpl.html.
-**
 **
 ** $QT_END_LICENSE$
 **
@@ -50,12 +42,15 @@
 #include <qmediaplaylistcontrol_p.h>
 #include <qmediaplaylistsourcecontrol_p.h>
 #include <qmedianetworkaccesscontrol.h>
+#include <qaudiorolecontrol.h>
 
 #include <QtCore/qcoreevent.h>
 #include <QtCore/qmetaobject.h>
 #include <QtCore/qtimer.h>
 #include <QtCore/qdebug.h>
 #include <QtCore/qpointer.h>
+#include <QtCore/qfileinfo.h>
+#include <QtCore/qtemporaryfile.h>
 
 QT_BEGIN_NAMESPACE
 
@@ -90,19 +85,14 @@ QT_BEGIN_NAMESPACE
     \sa QMediaObject, QMediaService, QVideoWidget, QMediaPlaylist
 */
 
-namespace
+static void qRegisterMediaPlayerMetaTypes()
 {
-class MediaPlayerRegisterMetaTypes
-{
-public:
-    MediaPlayerRegisterMetaTypes()
-    {
-        qRegisterMetaType<QMediaPlayer::State>("QMediaPlayer::State");
-        qRegisterMetaType<QMediaPlayer::MediaStatus>("QMediaPlayer::MediaStatus");
-        qRegisterMetaType<QMediaPlayer::Error>("QMediaPlayer::Error");
-    }
-} _registerPlayerMetaTypes;
+    qRegisterMetaType<QMediaPlayer::State>("QMediaPlayer::State");
+    qRegisterMetaType<QMediaPlayer::MediaStatus>("QMediaPlayer::MediaStatus");
+    qRegisterMetaType<QMediaPlayer::Error>("QMediaPlayer::Error");
 }
+
+Q_CONSTRUCTOR_FUNCTION(qRegisterMediaPlayerMetaTypes)
 
 #define MAX_NESTED_PLAYLISTS 16
 
@@ -114,29 +104,42 @@ public:
     QMediaPlayerPrivate()
         : provider(0)
         , control(0)
-        , state(QMediaPlayer::StoppedState)
-        , error(QMediaPlayer::NoError)
+        , audioRoleControl(0)
         , playlist(0)
         , networkAccessControl(0)
+        , state(QMediaPlayer::StoppedState)
+        , status(QMediaPlayer::UnknownMediaStatus)
+        , error(QMediaPlayer::NoError)
+        , ignoreNextStatusChange(-1)
         , nestedPlaylists(0)
+        , hasStreamPlaybackFeature(false)
     {}
 
     QMediaServiceProvider *provider;
     QMediaPlayerControl* control;
-    QMediaPlayer::State state;
-    QMediaPlayer::Error error;
+    QAudioRoleControl *audioRoleControl;
     QString errorString;
 
     QPointer<QObject> videoOutput;
     QMediaPlaylist *playlist;
     QMediaNetworkAccessControl *networkAccessControl;
     QVideoSurfaceOutput surfaceOutput;
+    QMediaContent qrcMedia;
+    QScopedPointer<QFile> qrcFile;
 
     QMediaContent rootMedia;
     QMediaContent pendingPlaylist;
+    QMediaPlayer::State state;
+    QMediaPlayer::MediaStatus status;
+    QMediaPlayer::Error error;
+    int ignoreNextStatusChange;
+    int nestedPlaylists;
+    bool hasStreamPlaybackFeature;
+
     QMediaPlaylist *parentPlaylist(QMediaPlaylist *pls);
     bool isInChain(QUrl url);
-    int nestedPlaylists;
+
+    void setMedia(const QMediaContent &media, QIODevice *stream = 0);
 
     void setPlaylist(QMediaPlaylist *playlist);
     void setPlaylistMedia();
@@ -149,6 +152,7 @@ public:
     void _q_error(int error, const QString &errorString);
     void _q_updateMedia(const QMediaContent&);
     void _q_playlistDestroyed();
+    void _q_handleMediaChanged(const QMediaContent&);
     void _q_handlePlaylistLoaded();
     void _q_handlePlaylistLoadFailed();
 };
@@ -208,22 +212,30 @@ void QMediaPlayerPrivate::_q_stateChanged(QMediaPlayer::State ps)
     }
 }
 
-void QMediaPlayerPrivate::_q_mediaStatusChanged(QMediaPlayer::MediaStatus status)
+void QMediaPlayerPrivate::_q_mediaStatusChanged(QMediaPlayer::MediaStatus s)
 {
     Q_Q(QMediaPlayer);
 
-    switch (status) {
-    case QMediaPlayer::StalledMedia:
-    case QMediaPlayer::BufferingMedia:
-        q->addPropertyWatch("bufferStatus");
-        emit q->mediaStatusChanged(status);
-        break;
-    default:
-        q->removePropertyWatch("bufferStatus");
-        emit q->mediaStatusChanged(status);
-        break;
+    if (int(s) == ignoreNextStatusChange) {
+        ignoreNextStatusChange = -1;
+        return;
     }
 
+    if (s != status) {
+        status = s;
+
+        switch (s) {
+        case QMediaPlayer::StalledMedia:
+        case QMediaPlayer::BufferingMedia:
+            q->addPropertyWatch("bufferStatus");
+            break;
+        default:
+            q->removePropertyWatch("bufferStatus");
+            break;
+        }
+
+        emit q->mediaStatusChanged(s);
+    }
 }
 
 void QMediaPlayerPrivate::_q_error(int error, const QString &errorString)
@@ -288,7 +300,7 @@ void QMediaPlayerPrivate::_q_updateMedia(const QMediaContent &media)
 
     const QMediaPlayer::State currentState = state;
 
-    control->setMedia(media, 0);
+    setMedia(media, 0);
 
     if (!media.isNull()) {
         switch (currentState) {
@@ -309,11 +321,76 @@ void QMediaPlayerPrivate::_q_updateMedia(const QMediaContent &media)
 void QMediaPlayerPrivate::_q_playlistDestroyed()
 {
     playlist = 0;
+    setMedia(QMediaContent(), 0);
+}
+
+void QMediaPlayerPrivate::setMedia(const QMediaContent &media, QIODevice *stream)
+{
+    Q_Q(QMediaPlayer);
 
     if (!control)
         return;
 
-    control->setMedia(QMediaContent(), 0);
+    QScopedPointer<QFile> file;
+
+    // Backends can't play qrc files directly.
+    // If the backend supports StreamPlayback, we pass a QFile for that resource.
+    // If it doesn't, we copy the data to a temporary file and pass its path.
+    if (!media.isNull() && !stream && media.canonicalUrl().scheme() == QLatin1String("qrc")) {
+        qrcMedia = media;
+
+        file.reset(new QFile(QLatin1Char(':') + media.canonicalUrl().path()));
+        if (!file->open(QFile::ReadOnly)) {
+            QMetaObject::invokeMethod(q, "_q_error", Qt::QueuedConnection,
+                                      Q_ARG(int, QMediaPlayer::ResourceError),
+                                      Q_ARG(QString, QMediaPlayer::tr("Attempting to play invalid Qt resource")));
+            QMetaObject::invokeMethod(q, "_q_mediaStatusChanged", Qt::QueuedConnection,
+                                      Q_ARG(QMediaPlayer::MediaStatus, QMediaPlayer::InvalidMedia));
+            file.reset();
+            // Ignore the next NoMedia status change, we just want to clear the current media
+            // on the backend side since we can't load the new one and we want to be in the
+            // InvalidMedia status.
+            ignoreNextStatusChange = QMediaPlayer::NoMedia;
+            control->setMedia(QMediaContent(), 0);
+
+        } else if (hasStreamPlaybackFeature) {
+            control->setMedia(media, file.data());
+        } else {
+            QTemporaryFile *tempFile = new QTemporaryFile;
+
+            // Preserve original file extension, some backends might not load the file if it doesn't
+            // have an extension.
+            const QString suffix = QFileInfo(*file).suffix();
+            if (!suffix.isEmpty())
+                tempFile->setFileTemplate(tempFile->fileTemplate() + QLatin1Char('.') + suffix);
+
+            // Copy the qrc data into the temporary file
+            tempFile->open();
+            char buffer[4096];
+            while (true) {
+                qint64 len = file->read(buffer, sizeof(buffer));
+                if (len < 1)
+                    break;
+                tempFile->write(buffer, len);
+            }
+            tempFile->close();
+
+            file.reset(tempFile);
+            control->setMedia(QMediaContent(QUrl::fromLocalFile(file->fileName())), 0);
+        }
+    } else {
+        qrcMedia = QMediaContent();
+        control->setMedia(media, stream);
+    }
+
+    qrcFile.swap(file); // Cleans up any previous file
+}
+
+void QMediaPlayerPrivate::_q_handleMediaChanged(const QMediaContent &media)
+{
+    Q_Q(QMediaPlayer);
+
+    emit q->currentMediaChanged(qrcMedia.isNull() ? media : qrcMedia);
 }
 
 void QMediaPlayerPrivate::setPlaylist(QMediaPlaylist *pls)
@@ -345,9 +422,9 @@ void QMediaPlayerPrivate::setPlaylistMedia()
                 playlist->next();
             }
             return;
-        } else if (control != 0) {
+        } else {
             // If we've just switched to a new playlist,
-            // then last emited currentMediaChanged was a playlist.
+            // then last emitted currentMediaChanged was a playlist.
             // Make sure we emit currentMediaChanged if new playlist has
             // the same media as the previous one:
             // sample.m3u
@@ -356,14 +433,14 @@ void QMediaPlayerPrivate::setPlaylistMedia()
             //          test.wav -- processed by backend,
             //                      media is not changed,
             //                      frontend needs to emit currentMediaChanged
-            bool isSameMedia = (control->media() == playlist->currentMedia());
-            control->setMedia(playlist->currentMedia(), 0);
+            bool isSameMedia = (q->currentMedia() == playlist->currentMedia());
+            setMedia(playlist->currentMedia(), 0);
             if (isSameMedia) {
-                emit q->currentMediaChanged(control->media());
+                emit q->currentMediaChanged(q->currentMedia());
             }
         }
     } else {
-        q->setMedia(QMediaContent(), 0);
+        setMedia(QMediaContent(), 0);
     }
 }
 
@@ -391,6 +468,7 @@ void QMediaPlayerPrivate::disconnectPlaylist()
         QObject::disconnect(playlist, SIGNAL(currentMediaChanged(QMediaContent)),
                             q, SLOT(_q_updateMedia(QMediaContent)));
         QObject::disconnect(playlist, SIGNAL(destroyed()), q, SLOT(_q_playlistDestroyed()));
+        q->unbind(playlist);
     }
 }
 
@@ -398,6 +476,7 @@ void QMediaPlayerPrivate::connectPlaylist()
 {
     Q_Q(QMediaPlayer);
     if (playlist) {
+        q->bind(playlist);
         QObject::connect(playlist, SIGNAL(currentMediaChanged(QMediaContent)),
                          q, SLOT(_q_updateMedia(QMediaContent)));
         QObject::connect(playlist, SIGNAL(destroyed()), q, SLOT(_q_playlistDestroyed()));
@@ -453,7 +532,7 @@ void QMediaPlayerPrivate::_q_handlePlaylistLoadFailed()
     if (playlist)
         playlist->next();
     else
-        control->setMedia(QMediaContent(), 0);
+        setMedia(QMediaContent(), 0);
 }
 
 static QMediaService *playerService(QMediaPlayer::Flags flags)
@@ -496,7 +575,7 @@ QMediaPlayer::QMediaPlayer(QObject *parent, QMediaPlayer::Flags flags):
         d->control = qobject_cast<QMediaPlayerControl*>(d->service->requestControl(QMediaPlayerControl_iid));
         d->networkAccessControl = qobject_cast<QMediaNetworkAccessControl*>(d->service->requestControl(QMediaNetworkAccessControl_iid));
         if (d->control != 0) {
-            connect(d->control, SIGNAL(mediaChanged(QMediaContent)), SIGNAL(currentMediaChanged(QMediaContent)));
+            connect(d->control, SIGNAL(mediaChanged(QMediaContent)), SLOT(_q_handleMediaChanged(QMediaContent)));
             connect(d->control, SIGNAL(stateChanged(QMediaPlayer::State)), SLOT(_q_stateChanged(QMediaPlayer::State)));
             connect(d->control, SIGNAL(mediaStatusChanged(QMediaPlayer::MediaStatus)),
                     SLOT(_q_mediaStatusChanged(QMediaPlayer::MediaStatus)));
@@ -512,11 +591,22 @@ QMediaPlayer::QMediaPlayer(QObject *parent, QMediaPlayer::Flags flags):
             connect(d->control, SIGNAL(playbackRateChanged(qreal)), SIGNAL(playbackRateChanged(qreal)));
             connect(d->control, SIGNAL(bufferStatusChanged(int)), SIGNAL(bufferStatusChanged(int)));
 
-            if (d->control->state() == PlayingState)
+            d->state = d->control->state();
+            d->status = d->control->mediaStatus();
+
+            if (d->state == PlayingState)
                 addPropertyWatch("position");
 
-            if (d->control->mediaStatus() == StalledMedia || d->control->mediaStatus() == BufferingMedia)
+            if (d->status == StalledMedia || d->status == BufferingMedia)
                 addPropertyWatch("bufferStatus");
+
+            d->hasStreamPlaybackFeature = d->provider->supportedFeatures(d->service).testFlag(QMediaServiceProviderHint::StreamPlayback);
+
+            d->audioRoleControl = qobject_cast<QAudioRoleControl*>(d->service->requestControl(QAudioRoleControl_iid));
+            if (d->audioRoleControl) {
+                connect(d->audioRoleControl, &QAudioRoleControl::audioRoleChanged,
+                        this, &QMediaPlayer::audioRoleChanged);
+            }
         }
         if (d->networkAccessControl != 0) {
             connect(d->networkAccessControl, SIGNAL(configurationChanged(QNetworkConfiguration)),
@@ -534,9 +624,13 @@ QMediaPlayer::~QMediaPlayer()
 {
     Q_D(QMediaPlayer);
 
+    d->disconnectPlaylist();
+
     if (d->service) {
         if (d->control)
             d->service->releaseControl(d->control);
+        if (d->audioRoleControl)
+            d->service->releaseControl(d->audioRoleControl);
 
         d->provider->releaseService(d->service);
     }
@@ -561,7 +655,9 @@ const QIODevice *QMediaPlayer::mediaStream() const
 {
     Q_D(const QMediaPlayer);
 
-    if (d->control != 0)
+    // When playing a resource file, we might have passed a QFile to the backend. Hide it from
+    // the user.
+    if (d->control && d->qrcMedia.isNull())
         return d->control->mediaStream();
 
     return 0;
@@ -578,7 +674,12 @@ QMediaContent QMediaPlayer::currentMedia() const
 {
     Q_D(const QMediaPlayer);
 
-    if (d->control != 0)
+    // When playing a resource file, don't return the backend's current media, which
+    // can be a temporary file.
+    if (!d->qrcMedia.isNull())
+        return d->qrcMedia;
+
+    if (d->control)
         return d->control->media();
 
     return QMediaContent();
@@ -612,12 +713,7 @@ QMediaPlayer::State QMediaPlayer::state() const
 
 QMediaPlayer::MediaStatus QMediaPlayer::mediaStatus() const
 {
-    Q_D(const QMediaPlayer);
-
-    if (d->control != 0)
-        return d->control->mediaStatus();
-
-    return QMediaPlayer::UnknownMediaStatus;
+    return d_func()->status;
 }
 
 qint64 QMediaPlayer::duration() const
@@ -757,17 +853,19 @@ void QMediaPlayer::play()
     }
 
     //if playlist control is available, the service should advance itself
-    if (d->rootMedia.playlist() && d->rootMedia.playlist()->currentIndex() == -1 && !d->rootMedia.playlist()->isEmpty()) {
-
+    if (d->rootMedia.playlist() && !d->rootMedia.playlist()->isEmpty()) {
         // switch to playing state
         if (d->state != QMediaPlayer::PlayingState)
             d->_q_stateChanged(QMediaPlayer::PlayingState);
 
-        if (d->playlist != d->rootMedia.playlist())
-            d->setPlaylist(d->rootMedia.playlist());
-        Q_ASSERT(d->playlist == d->rootMedia.playlist());
-        emit currentMediaChanged(d->rootMedia);
-        d->playlist->setCurrentIndex(0);
+        if (d->rootMedia.playlist()->currentIndex() == -1) {
+            if (d->playlist != d->rootMedia.playlist())
+                d->setPlaylist(d->rootMedia.playlist());
+            Q_ASSERT(d->playlist == d->rootMedia.playlist());
+
+            emit currentMediaChanged(d->rootMedia);
+            d->playlist->setCurrentIndex(0);
+        }
     }
 
     // Reset error conditions
@@ -858,12 +956,17 @@ void QMediaPlayer::setPlaybackRate(qreal rate)
     Sets the current \a media source.
 
     If a \a stream is supplied; media data will be read from it instead of resolving the media
-    source.  In this case the media source may still be used to resolve additional information
-    about the media such as mime type.
+    source. In this case the media source may still be used to resolve additional information
+    about the media such as mime type. The \a stream must be open and readable.
 
     Setting the media to a null QMediaContent will cause the player to discard all
     information relating to the current media source and to cease all I/O operations related
     to that media.
+
+    \note This function returns immediately after recording the specified source of the media.
+    It does not wait for the media to finish loading and does not check for errors. Listen for
+    the mediaStatusChanged() and error() signals to be notified when the media is loaded and
+    when an error occurs during loading.
 */
 
 void QMediaPlayer::setMedia(const QMediaContent &media, QIODevice *stream)
@@ -884,8 +987,8 @@ void QMediaPlayer::setMedia(const QMediaContent &media, QIODevice *stream)
         // reset playlist to the 1st item
         media.playlist()->setCurrentIndex(0);
         d->setPlaylist(media.playlist());
-    } else if (d->control != 0) {
-        d->control->setMedia(media, stream);
+    } else {
+        d->setMedia(media, stream);
     }
 }
 
@@ -1023,6 +1126,41 @@ QMultimedia::AvailabilityStatus QMediaPlayer::availability() const
     return QMediaObject::availability();
 }
 
+QAudio::Role QMediaPlayer::audioRole() const
+{
+    Q_D(const QMediaPlayer);
+
+    if (d->audioRoleControl != NULL)
+        return d->audioRoleControl->audioRole();
+
+    return QAudio::UnknownRole;
+}
+
+void QMediaPlayer::setAudioRole(QAudio::Role audioRole)
+{
+    Q_D(QMediaPlayer);
+
+    if (d->audioRoleControl)
+        d->audioRoleControl->setAudioRole(audioRole);
+}
+
+/*!
+    Returns a list of supported audio roles.
+
+    If setting the audio role is not supported, an empty list is returned.
+
+    \since 5.6
+    \sa audioRole
+*/
+QList<QAudio::Role> QMediaPlayer::supportedAudioRoles() const
+{
+    Q_D(const QMediaPlayer);
+
+    if (d->audioRoleControl)
+        return d->audioRoleControl->supportedAudioRoles();
+
+    return QList<QAudio::Role>();
+}
 
 // Enums
 /*!
@@ -1121,6 +1259,14 @@ QMultimedia::AvailabilityStatus QMediaPlayer::availability() const
     \fn void QMediaPlayer::seekableChanged(bool seekable);
 
     Signals the \a seekable status of the player object has changed.
+*/
+
+/*!
+    \fn void QMediaPlayer::audioRoleChanged(QAudio::Role role)
+
+    Signals that the audio \a role of the media player has changed.
+
+    \since 5.6
 */
 
 // Properties
@@ -1233,12 +1379,14 @@ QMultimedia::AvailabilityStatus QMediaPlayer::availability() const
 
 /*!
     \property QMediaPlayer::bufferStatus
-    \brief the percentage of the temporary buffer filled before playback begins.
+    \brief the percentage of the temporary buffer filled before playback begins or resumes, from
+    \c 0 (empty) to \c 100 (full).
 
     When the player object is buffering; this property holds the percentage of
     the temporary buffer that is filled. The buffer will need to reach 100%
-    filled before playback can resume, at which time the MediaStatus will be
-    BufferedMedia.
+    filled before playback can start or resume, at which time mediaStatus() will return
+    BufferedMedia or BufferingMedia. If the value is anything lower than \c 100, mediaStatus() will
+    return StalledMedia.
 
     \sa mediaStatus()
 */
@@ -1286,6 +1434,19 @@ QMultimedia::AvailabilityStatus QMediaPlayer::availability() const
     Not all playback services support change of the playback rate. It is
     framework defined as to the status and quality of audio and video
     while fast forwarding or rewinding.
+*/
+
+/*!
+    \property QMediaPlayer::audioRole
+    \brief the role of the audio stream played by the media player.
+
+    It can be set to specify the type of audio being played, allowing the system to make
+    appropriate decisions when it comes to volume, routing or post-processing.
+
+    The audio role must be set before calling setMedia().
+
+    \since 5.6
+    \sa supportedAudioRoles()
 */
 
 /*!

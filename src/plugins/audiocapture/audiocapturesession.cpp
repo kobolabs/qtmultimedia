@@ -1,39 +1,31 @@
 /****************************************************************************
 **
-** Copyright (C) 2013 Digia Plc and/or its subsidiary(-ies).
-** Contact: http://www.qt-project.org/legal
+** Copyright (C) 2015 The Qt Company Ltd.
+** Contact: http://www.qt.io/licensing/
 **
 ** This file is part of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL$
+** $QT_BEGIN_LICENSE:LGPL21$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and Digia.  For licensing terms and
-** conditions see http://qt.digia.com/licensing.  For further information
-** use the contact form at http://qt.digia.com/contact-us.
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see http://www.qt.io/terms-conditions. For further
+** information use the contact form at http://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU Lesser General Public License version 2.1 requirements
-** will be met: http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 2.1 or version 3 as published by the Free
+** Software Foundation and appearing in the file LICENSE.LGPLv21 and
+** LICENSE.LGPLv3 included in the packaging of this file. Please review the
+** following information to ensure the GNU Lesser General Public License
+** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
+** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
 **
-** In addition, as a special exception, Digia gives you certain additional
-** rights.  These rights are described in the Digia Qt LGPL Exception
+** As a special exception, The Qt Company gives you certain additional
+** rights. These rights are described in The Qt Company LGPL Exception
 ** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3.0 as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU General Public License version 3.0 requirements will be
-** met: http://www.gnu.org/copyleft/gpl.html.
-**
 **
 ** $QT_END_LICENSE$
 **
@@ -96,6 +88,8 @@ AudioCaptureSession::AudioCaptureSession(QObject *parent)
     , m_audioInput(0)
     , m_deviceInfo(QAudioDeviceInfo::defaultInputDevice())
     , m_wavFile(true)
+    , m_volume(1.0)
+    , m_muted(false)
 {
     m_format = m_deviceInfo.preferredFormat();
 }
@@ -250,7 +244,7 @@ QString AudioCaptureSession::generateFileName(const QDir &dir,
 {
     int lastClip = 0;
     foreach(QString fileName, dir.entryList(QStringList() << QString("clip_*.%1").arg(ext))) {
-        int imgNumber = fileName.mid(5, fileName.size()-6-ext.length()).toInt();
+        int imgNumber = fileName.midRef(5, fileName.size()-6-ext.length()).toInt();
         lastClip = qMax(lastClip, imgNumber);
     }
 
@@ -320,6 +314,8 @@ void AudioCaptureSession::record()
                 file.write((char*)&header,sizeof(CombinedHeader));
             }
 
+            setVolumeHelper(m_muted ? 0 : m_volume);
+
             file.startProbes(m_format);
             m_audioInput->start(qobject_cast<QIODevice*>(&file));
         } else {
@@ -346,11 +342,12 @@ void AudioCaptureSession::stop()
         file.stopProbes();
         file.close();
         if (m_wavFile) {
-            qint32 fileSize = file.size()-8;
+            qint32 fileSize = file.size();
             file.open(QIODevice::ReadWrite | QIODevice::Unbuffered);
             file.read((char*)&header,sizeof(CombinedHeader));
-            header.riff.descriptor.size = fileSize; // filesize-8
-            header.data.descriptor.size = fileSize-44; // samples*channels*sampleSize/8
+            header.riff.descriptor.size = fileSize - 8; // The RIFF chunk size is the file size minus
+                                                        // the first two RIFF fields (8 bytes)
+            header.data.descriptor.size = fileSize - 44; // dataSize = fileSize - headerSize (44 bytes)
             file.seek(0);
             file.write((char*)&header,sizeof(CombinedHeader));
             file.close();
@@ -407,5 +404,52 @@ void AudioCaptureSession::setCaptureDevice(const QString &deviceName)
     }
     m_deviceInfo = QAudioDeviceInfo::defaultInputDevice();
 }
+
+qreal AudioCaptureSession::volume() const
+{
+    return m_volume;
+}
+
+bool AudioCaptureSession::isMuted() const
+{
+    return m_muted;
+}
+
+void AudioCaptureSession::setVolume(qreal v)
+{
+    qreal boundedVolume = qBound(qreal(0), v, qreal(1));
+
+    if (m_volume == boundedVolume)
+        return;
+
+    m_volume = boundedVolume;
+
+    if (!m_muted)
+        setVolumeHelper(m_volume);
+
+    emit volumeChanged(m_volume);
+}
+
+void AudioCaptureSession::setMuted(bool muted)
+{
+    if (m_muted == muted)
+        return;
+
+    m_muted = muted;
+
+    setVolumeHelper(m_muted ? 0 : m_volume);
+
+    emit mutedChanged(m_muted);
+}
+
+void AudioCaptureSession::setVolumeHelper(qreal volume)
+{
+    if (!m_audioInput)
+        return;
+
+    m_audioInput->setVolume(volume);
+}
+
+
 
 QT_END_NAMESPACE

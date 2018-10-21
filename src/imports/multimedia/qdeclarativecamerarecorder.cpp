@@ -1,39 +1,31 @@
 /****************************************************************************
 **
-** Copyright (C) 2013 Digia Plc and/or its subsidiary(-ies).
-** Contact: http://www.qt-project.org/legal
+** Copyright (C) 2015 The Qt Company Ltd.
+** Contact: http://www.qt.io/licensing/
 **
 ** This file is part of the plugins of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL$
+** $QT_BEGIN_LICENSE:LGPL21$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and Digia.  For licensing terms and
-** conditions see http://qt.digia.com/licensing.  For further information
-** use the contact form at http://qt.digia.com/contact-us.
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see http://www.qt.io/terms-conditions. For further
+** information use the contact form at http://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU Lesser General Public License version 2.1 requirements
-** will be met: http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 2.1 or version 3 as published by the Free
+** Software Foundation and appearing in the file LICENSE.LGPLv21 and
+** LICENSE.LGPLv3 included in the packaging of this file. Please review the
+** following information to ensure the GNU Lesser General Public License
+** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
+** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
 **
-** In addition, as a special exception, Digia gives you certain additional
-** rights.  These rights are described in the Digia Qt LGPL Exception
+** As a special exception, The Qt Company gives you certain additional
+** rights. These rights are described in The Qt Company LGPL Exception
 ** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3.0 as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU General Public License version 3.0 requirements will be
-** met: http://www.gnu.org/copyleft/gpl.html.
-**
 **
 ** $QT_END_LICENSE$
 **
@@ -58,7 +50,7 @@ QT_BEGIN_NAMESPACE
     settings and metadata for videos.
 
     It should not be constructed separately, instead the
-    \c videRecorder property of a \l Camera should be used.
+    \c videoRecorder property of a \l Camera should be used.
 
     \qml
     Camera {
@@ -145,6 +137,7 @@ QString QDeclarativeCameraRecorder::mediaContainer() const
 
 void QDeclarativeCameraRecorder::setCaptureResolution(const QSize &resolution)
 {
+    m_videoSettings = m_recorder->videoSettings();
     if (resolution != captureResolution()) {
         m_videoSettings.setResolution(resolution);
         m_recorder->setVideoSettings(m_videoSettings);
@@ -154,6 +147,7 @@ void QDeclarativeCameraRecorder::setCaptureResolution(const QSize &resolution)
 
 void QDeclarativeCameraRecorder::setAudioCodec(const QString &codec)
 {
+    m_audioSettings = m_recorder->audioSettings();
     if (codec != audioCodec()) {
         m_audioSettings.setCodec(codec);
         m_recorder->setAudioSettings(m_audioSettings);
@@ -163,6 +157,7 @@ void QDeclarativeCameraRecorder::setAudioCodec(const QString &codec)
 
 void QDeclarativeCameraRecorder::setVideoCodec(const QString &codec)
 {
+    m_videoSettings = m_recorder->videoSettings();
     if (codec != videoCodec()) {
         m_videoSettings.setCodec(codec);
         m_recorder->setVideoSettings(m_videoSettings);
@@ -281,6 +276,7 @@ QDeclarativeCameraRecorder::EncodingMode QDeclarativeCameraRecorder::audioEncodi
 
 void QDeclarativeCameraRecorder::setFrameRate(qreal frameRate)
 {
+    m_videoSettings = m_recorder->videoSettings();
     if (!qFuzzyCompare(m_videoSettings.frameRate(),frameRate)) {
         m_videoSettings.setFrameRate(frameRate);
         m_recorder->setVideoSettings(m_videoSettings);
@@ -290,6 +286,7 @@ void QDeclarativeCameraRecorder::setFrameRate(qreal frameRate)
 
 void QDeclarativeCameraRecorder::setVideoBitRate(int rate)
 {
+    m_videoSettings = m_recorder->videoSettings();
     if (m_videoSettings.bitRate() != rate) {
         m_videoSettings.setBitRate(rate);
         m_recorder->setVideoSettings(m_videoSettings);
@@ -299,6 +296,7 @@ void QDeclarativeCameraRecorder::setVideoBitRate(int rate)
 
 void QDeclarativeCameraRecorder::setAudioBitRate(int rate)
 {
+    m_audioSettings = m_recorder->audioSettings();
     if (m_audioSettings.bitRate() != rate) {
         m_audioSettings.setBitRate(rate);
         m_recorder->setAudioSettings(m_audioSettings);
@@ -308,6 +306,7 @@ void QDeclarativeCameraRecorder::setAudioBitRate(int rate)
 
 void QDeclarativeCameraRecorder::setAudioChannels(int channels)
 {
+    m_audioSettings = m_recorder->audioSettings();
     if (m_audioSettings.channelCount() != channels) {
         m_audioSettings.setChannelCount(channels);
         m_recorder->setAudioSettings(m_audioSettings);
@@ -317,6 +316,7 @@ void QDeclarativeCameraRecorder::setAudioChannels(int channels)
 
 void QDeclarativeCameraRecorder::setAudioSampleRate(int rate)
 {
+    m_audioSettings = m_recorder->audioSettings();
     if (m_audioSettings.sampleRate() != rate) {
         m_audioSettings.setSampleRate(rate);
         m_recorder->setAudioSettings(m_audioSettings);
@@ -326,6 +326,7 @@ void QDeclarativeCameraRecorder::setAudioSampleRate(int rate)
 
 void QDeclarativeCameraRecorder::setAudioEncodingMode(QDeclarativeCameraRecorder::EncodingMode encodingMode)
 {
+    m_audioSettings = m_recorder->audioSettings();
     if (m_audioSettings.encodingMode() != QMultimedia::EncodingMode(encodingMode)) {
         m_audioSettings.setEncodingMode(QMultimedia::EncodingMode(encodingMode));
         m_recorder->setAudioSettings(m_audioSettings);
@@ -335,6 +336,7 @@ void QDeclarativeCameraRecorder::setAudioEncodingMode(QDeclarativeCameraRecorder
 
 void QDeclarativeCameraRecorder::setVideoEncodingMode(QDeclarativeCameraRecorder::EncodingMode encodingMode)
 {
+    m_videoSettings = m_recorder->videoSettings();
     if (m_videoSettings.encodingMode() != QMultimedia::EncodingMode(encodingMode)) {
         m_videoSettings.setEncodingMode(QMultimedia::EncodingMode(encodingMode));
         m_recorder->setVideoSettings(m_videoSettings);

@@ -1,6 +1,5 @@
 
-QT += multimedia-private network
-CONFIG += no_private_qt_headers_warning
+QT += core-private multimedia-private network
 
 qtHaveModule(widgets) {
     QT += widgets multimediawidgets-private
@@ -12,14 +11,18 @@ LIBS += -lqgsttools_p
 CONFIG += link_pkgconfig
 
 PKGCONFIG += \
-    gstreamer-0.10 \
-    gstreamer-base-0.10 \
-    gstreamer-interfaces-0.10 \
-    gstreamer-audio-0.10 \
-    gstreamer-video-0.10 \
-    gstreamer-pbutils-0.10
+    gstreamer-$$GST_VERSION \
+    gstreamer-base-$$GST_VERSION \
+    gstreamer-audio-$$GST_VERSION \
+    gstreamer-video-$$GST_VERSION \
+    gstreamer-pbutils-$$GST_VERSION
 
-maemo*:PKGCONFIG +=gstreamer-plugins-bad-0.10
+maemo*:PKGCONFIG +=gstreamer-plugins-bad-$$GST_VERSION
+
+mir: {
+    DEFINES += HAVE_MIR
+}
+
 
 config_resourcepolicy {
     DEFINES += HAVE_RESOURCE_POLICY
@@ -27,8 +30,8 @@ config_resourcepolicy {
 }
 
 config_gstreamer_appsrc {
-    PKGCONFIG += gstreamer-app-0.10
+    PKGCONFIG += gstreamer-app-$$GST_VERSION
     DEFINES += HAVE_GST_APPSRC
-    LIBS += -lgstapp-0.10
+    LIBS += -lgstapp-$$GST_VERSION
 }
 

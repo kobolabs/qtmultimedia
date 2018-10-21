@@ -1,39 +1,31 @@
 /****************************************************************************
 **
-** Copyright (C) 2013 Digia Plc and/or its subsidiary(-ies).
-** Contact: http://www.qt-project.org/legal
+** Copyright (C) 2015 The Qt Company Ltd.
+** Contact: http://www.qt.io/licensing/
 **
 ** This file is part of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL$
+** $QT_BEGIN_LICENSE:LGPL21$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and Digia.  For licensing terms and
-** conditions see http://qt.digia.com/licensing.  For further information
-** use the contact form at http://qt.digia.com/contact-us.
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see http://www.qt.io/terms-conditions. For further
+** information use the contact form at http://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU Lesser General Public License version 2.1 requirements
-** will be met: http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 2.1 or version 3 as published by the Free
+** Software Foundation and appearing in the file LICENSE.LGPLv21 and
+** LICENSE.LGPLv3 included in the packaging of this file. Please review the
+** following information to ensure the GNU Lesser General Public License
+** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
+** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
 **
-** In addition, as a special exception, Digia gives you certain additional
-** rights.  These rights are described in the Digia Qt LGPL Exception
+** As a special exception, The Qt Company gives you certain additional
+** rights. These rights are described in The Qt Company LGPL Exception
 ** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3.0 as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU General Public License version 3.0 requirements will be
-** met: http://www.gnu.org/copyleft/gpl.html.
-**
 **
 ** $QT_END_LICENSE$
 **
@@ -76,28 +68,39 @@ bool qt_sizeLessThan(const QSize &s1, const QSize &s2)
     return s1.width() * s1.height() < s2.width() * s2.height();
 }
 
-void qt_convert_NV21_to_ARGB32(const uchar *yuv, quint32 *rgb, int width, int height)
+QVideoFrame::PixelFormat qt_pixelFormatFromAndroidImageFormat(AndroidCamera::ImageFormat f)
 {
-    const int frameSize = width * height;
+    switch (f) {
+    case AndroidCamera::NV21:
+        return QVideoFrame::Format_NV21;
+    case AndroidCamera::YV12:
+        return QVideoFrame::Format_YV12;
+    case AndroidCamera::RGB565:
+        return QVideoFrame::Format_RGB565;
+    case AndroidCamera::YUY2:
+        return QVideoFrame::Format_YUYV;
+    case AndroidCamera::JPEG:
+        return QVideoFrame::Format_Jpeg;
+    default:
+        return QVideoFrame::Format_Invalid;
+    }
+}
 
-    int a = 0;
-    for (int i = 0, ci = 0; i < height; ++i, ci += 1) {
-        for (int j = 0, cj = 0; j < width; ++j, cj += 1) {
-            int y = (0xff & ((int) yuv[ci * width + cj]));
-            int v = (0xff & ((int) yuv[frameSize + (ci >> 1) * width + (cj & ~1) + 0]));
-            int u = (0xff & ((int) yuv[frameSize + (ci >> 1) * width + (cj & ~1) + 1]));
-            y = y < 16 ? 16 : y;
-
-            int r = (int) (1.164f * (y - 16) + 1.596f * (v - 128));
-            int g = (int) (1.164f * (y - 16) - 0.813f * (v - 128) - 0.391f * (u - 128));
-            int b = (int) (1.164f * (y - 16) + 2.018f * (u - 128));
-
-            r = qBound(0, r, 255);
-            g = qBound(0, g, 255);
-            b = qBound(0, b, 255);
-
-            rgb[a++] = 0xff000000 | (r << 16) | (g << 8) | b;
-        }
+AndroidCamera::ImageFormat qt_androidImageFormatFromPixelFormat(QVideoFrame::PixelFormat f)
+{
+    switch (f) {
+    case QVideoFrame::Format_NV21:
+        return AndroidCamera::NV21;
+    case QVideoFrame::Format_YV12:
+        return AndroidCamera::YV12;
+    case QVideoFrame::Format_RGB565:
+        return AndroidCamera::RGB565;
+    case QVideoFrame::Format_YUYV:
+        return AndroidCamera::YUY2;
+    case QVideoFrame::Format_Jpeg:
+        return AndroidCamera::JPEG;
+    default:
+        return AndroidCamera::UnknownImageFormat;
     }
 }
 

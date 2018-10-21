@@ -1,39 +1,31 @@
 /****************************************************************************
 **
-** Copyright (C) 2013 Digia Plc and/or its subsidiary(-ies).
-** Contact: http://www.qt-project.org/legal
+** Copyright (C) 2015 The Qt Company Ltd.
+** Contact: http://www.qt.io/licensing/
 **
 ** This file is part of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL$
+** $QT_BEGIN_LICENSE:LGPL21$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and Digia.  For licensing terms and
-** conditions see http://qt.digia.com/licensing.  For further information
-** use the contact form at http://qt.digia.com/contact-us.
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see http://www.qt.io/terms-conditions. For further
+** information use the contact form at http://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU Lesser General Public License version 2.1 requirements
-** will be met: http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 2.1 or version 3 as published by the Free
+** Software Foundation and appearing in the file LICENSE.LGPLv21 and
+** LICENSE.LGPLv3 included in the packaging of this file. Please review the
+** following information to ensure the GNU Lesser General Public License
+** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
+** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
 **
-** In addition, as a special exception, Digia gives you certain additional
-** rights.  These rights are described in the Digia Qt LGPL Exception
+** As a special exception, The Qt Company gives you certain additional
+** rights. These rights are described in The Qt Company LGPL Exception
 ** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3.0 as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU General Public License version 3.0 requirements will be
-** met: http://www.gnu.org/copyleft/gpl.html.
-**
 **
 ** $QT_END_LICENSE$
 **
@@ -83,19 +75,14 @@ QT_BEGIN_NAMESPACE
     \value CaptureToBuffer  Capture the image to a buffer for further processing.
 */
 
-namespace
+static void qRegisterCameraImageCaptureMetaTypes()
 {
-class MediaRecorderRegisterMetaTypes
-{
-public:
-    MediaRecorderRegisterMetaTypes()
-    {
-        qRegisterMetaType<QCameraImageCapture::Error>("QCameraImageCapture::Error");
-        qRegisterMetaType<QCameraImageCapture::CaptureDestination>("QCameraImageCapture::CaptureDestination");
-        qRegisterMetaType<QCameraImageCapture::CaptureDestinations>("QCameraImageCapture::CaptureDestinations");
-    }
-} _registerRecorderMetaTypes;
+    qRegisterMetaType<QCameraImageCapture::Error>("QCameraImageCapture::Error");
+    qRegisterMetaType<QCameraImageCapture::CaptureDestination>("QCameraImageCapture::CaptureDestination");
+    qRegisterMetaType<QCameraImageCapture::CaptureDestinations>("QCameraImageCapture::CaptureDestinations");
 }
+
+Q_CONSTRUCTOR_FUNCTION(qRegisterCameraImageCaptureMetaTypes)
 
 
 class QCameraImageCapturePrivate
@@ -266,8 +253,8 @@ bool QCameraImageCapture::setMediaObject(QMediaObject *mediaObject)
                         this, SIGNAL(imageMetadataAvailable(int,QString,QVariant)));
                 connect(d->control, SIGNAL(imageAvailable(int,QVideoFrame)),
                         this, SIGNAL(imageAvailable(int,QVideoFrame)));
-                connect(d->control, SIGNAL(imageSaved(int, QString)),
-                        this, SIGNAL(imageSaved(int, QString)));
+                connect(d->control, SIGNAL(imageSaved(int,QString)),
+                        this, SIGNAL(imageSaved(int,QString)));
                 connect(d->control, SIGNAL(readyForCaptureChanged(bool)),
                         this, SLOT(_q_readyChanged(bool)));
                 connect(d->control, SIGNAL(error(int,int,QString)),
@@ -501,11 +488,8 @@ void QCameraImageCapture::setCaptureDestination(QCameraImageCapture::CaptureDest
   \property QCameraImageCapture::readyForCapture
   \brief whether the service is ready to capture a an image immediately.
 
-   It's permissible to call capture() while the camera status is QCamera::ActiveStatus
-   regardless of isReadyForCapture property value.
-   If camera is not ready to capture image immediately,
-   the capture request is queued with all the related camera settings
-   to be executed as soon as possible.
+  Calling capture() while \e readyForCapture is \c false is not permitted and
+  results in an error.
 */
 
 bool QCameraImageCapture::isReadyForCapture() const
@@ -536,11 +520,13 @@ bool QCameraImageCapture::isReadyForCapture() const
     the default directory, with a full path reported with imageCaptured() and imageSaved() signals.
 
     QCamera saves all the capture parameters like exposure settings or
-    image processing parameters, so changes to camera paramaters after
+    image processing parameters, so changes to camera parameters after
     capture() is called do not affect previous capture requests.
 
     QCameraImageCapture::capture returns the capture Id parameter, used with
     imageExposed(), imageCaptured() and imageSaved() signals.
+
+    \sa isReadyForCapture()
 */
 int QCameraImageCapture::capture(const QString &file)
 {

@@ -1,39 +1,31 @@
 /****************************************************************************
 **
-** Copyright (C) 2013 Digia Plc and/or its subsidiary(-ies).
-** Contact: http://www.qt-project.org/legal
+** Copyright (C) 2015 The Qt Company Ltd.
+** Contact: http://www.qt.io/licensing/
 **
 ** This file is part of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL$
+** $QT_BEGIN_LICENSE:LGPL21$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and Digia.  For licensing terms and
-** conditions see http://qt.digia.com/licensing.  For further information
-** use the contact form at http://qt.digia.com/contact-us.
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see http://www.qt.io/terms-conditions. For further
+** information use the contact form at http://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU Lesser General Public License version 2.1 requirements
-** will be met: http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 2.1 or version 3 as published by the Free
+** Software Foundation and appearing in the file LICENSE.LGPLv21 and
+** LICENSE.LGPLv3 included in the packaging of this file. Please review the
+** following information to ensure the GNU Lesser General Public License
+** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
+** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
 **
-** In addition, as a special exception, Digia gives you certain additional
-** rights.  These rights are described in the Digia Qt LGPL Exception
+** As a special exception, The Qt Company gives you certain additional
+** rights. These rights are described in The Qt Company LGPL Exception
 ** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3.0 as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU General Public License version 3.0 requirements will be
-** met: http://www.gnu.org/copyleft/gpl.html.
-**
 **
 ** $QT_END_LICENSE$
 **
@@ -42,7 +34,7 @@
 #include "qandroidcamerafocuscontrol.h"
 
 #include "qandroidcamerasession.h"
-#include "jcamera.h"
+#include "androidcamera.h"
 
 QT_BEGIN_NAMESPACE
 
@@ -80,42 +72,45 @@ QCameraFocus::FocusModes QAndroidCameraFocusControl::focusMode() const
 
 void QAndroidCameraFocusControl::setFocusMode(QCameraFocus::FocusModes mode)
 {
-    if (m_focusMode == mode || !m_session->camera() || !isFocusModeSupported(mode))
+    if (!m_session->camera()) {
+        setFocusModeHelper(mode);
         return;
-
-    QString focusMode = QLatin1String("fixed");
-
-    if (mode.testFlag(QCameraFocus::HyperfocalFocus)) {
-        focusMode = QLatin1String("edof");
-    } else if (mode.testFlag(QCameraFocus::ManualFocus)) {
-        focusMode = QLatin1String("fixed");
-    } else if (mode.testFlag(QCameraFocus::AutoFocus)) {
-        focusMode = QLatin1String("auto");
-    } else if (mode.testFlag(QCameraFocus::MacroFocus)) {
-        focusMode = QLatin1String("macro");
-    } else if (mode.testFlag(QCameraFocus::ContinuousFocus)) {
-        if ((m_session->captureMode().testFlag(QCamera::CaptureVideo) && m_continuousVideoFocusSupported)
-                || !m_continuousPictureFocusSupported) {
-            focusMode = QLatin1String("continuous-video");
-        } else {
-            focusMode = QLatin1String("continuous-picture");
-        }
-    } else if (mode.testFlag(QCameraFocus::InfinityFocus)) {
-        focusMode = QLatin1String("infinity");
     }
 
-    m_session->camera()->setFocusMode(focusMode);
+    if (isFocusModeSupported(mode)) {
+        QString focusMode = QLatin1String("fixed");
 
-    // reset focus position
-    m_session->camera()->cancelAutoFocus();
+        if (mode.testFlag(QCameraFocus::HyperfocalFocus)) {
+            focusMode = QLatin1String("edof");
+        } else if (mode.testFlag(QCameraFocus::ManualFocus)) {
+            focusMode = QLatin1String("fixed");
+        } else if (mode.testFlag(QCameraFocus::AutoFocus)) {
+            focusMode = QLatin1String("auto");
+        } else if (mode.testFlag(QCameraFocus::MacroFocus)) {
+            focusMode = QLatin1String("macro");
+        } else if (mode.testFlag(QCameraFocus::ContinuousFocus)) {
+            if ((m_session->captureMode().testFlag(QCamera::CaptureVideo) && m_continuousVideoFocusSupported)
+                    || !m_continuousPictureFocusSupported) {
+                focusMode = QLatin1String("continuous-video");
+            } else {
+                focusMode = QLatin1String("continuous-picture");
+            }
+        } else if (mode.testFlag(QCameraFocus::InfinityFocus)) {
+            focusMode = QLatin1String("infinity");
+        }
 
-    m_focusMode = mode;
-    emit focusModeChanged(m_focusMode);
+        m_session->camera()->setFocusMode(focusMode);
+
+        // reset focus position
+        m_session->camera()->cancelAutoFocus();
+
+        setFocusModeHelper(mode);
+    }
 }
 
 bool QAndroidCameraFocusControl::isFocusModeSupported(QCameraFocus::FocusModes mode) const
 {
-    return m_supportedFocusModes.contains(mode);
+    return m_session->camera() ? m_supportedFocusModes.contains(mode) : false;
 }
 
 QCameraFocus::FocusPointMode QAndroidCameraFocusControl::focusPointMode() const
@@ -125,29 +120,31 @@ QCameraFocus::FocusPointMode QAndroidCameraFocusControl::focusPointMode() const
 
 void QAndroidCameraFocusControl::setFocusPointMode(QCameraFocus::FocusPointMode mode)
 {
-    if (!m_session->camera() || m_focusPointMode == mode || !isFocusPointModeSupported(mode))
+    if (!m_session->camera()) {
+        setFocusPointModeHelper(mode);
         return;
-
-    m_focusPointMode = mode;
-
-    if (mode == QCameraFocus::FocusPointCustom) {
-        m_actualFocusPoint = m_customFocusPoint;
-    } else {
-        // FocusPointAuto | FocusPointCenter
-        // note: there is no way to know the actual focus point in FocusPointAuto mode,
-        // so just report the focus point to be at the center of the frame
-        m_actualFocusPoint = QPointF(0.5, 0.5);
     }
 
-    updateFocusZones();
-    setCameraFocusArea();
+    if (isFocusPointModeSupported(mode)) {
+        if (mode == QCameraFocus::FocusPointCustom) {
+            m_actualFocusPoint = m_customFocusPoint;
+        } else {
+            // FocusPointAuto | FocusPointCenter
+            // note: there is no way to know the actual focus point in FocusPointAuto mode,
+            // so just report the focus point to be at the center of the frame
+            m_actualFocusPoint = QPointF(0.5, 0.5);
+        }
 
-    emit focusPointModeChanged(mode);
+        setFocusPointModeHelper(mode);
+
+        updateFocusZones();
+        setCameraFocusArea();
+    }
 }
 
 bool QAndroidCameraFocusControl::isFocusPointModeSupported(QCameraFocus::FocusPointMode mode) const
 {
-    return m_supportedFocusPointModes.contains(mode);
+    return m_session->camera() ? m_supportedFocusPointModes.contains(mode) : false;
 }
 
 QPointF QAndroidCameraFocusControl::customFocusPoint() const
@@ -157,13 +154,12 @@ QPointF QAndroidCameraFocusControl::customFocusPoint() const
 
 void QAndroidCameraFocusControl::setCustomFocusPoint(const QPointF &point)
 {
-    if (m_customFocusPoint == point)
-        return;
+    if (m_customFocusPoint != point) {
+        m_customFocusPoint = point;
+        emit customFocusPointChanged(m_customFocusPoint);
+    }
 
-    m_customFocusPoint = point;
-    emit customFocusPointChanged(m_customFocusPoint);
-
-    if (m_focusPointMode == QCameraFocus::FocusPointCustom) {
+    if (m_session->camera() && m_focusPointMode == QCameraFocus::FocusPointCustom) {
         m_actualFocusPoint = m_customFocusPoint;
         updateFocusZones();
         setCameraFocusArea();
@@ -187,12 +183,7 @@ void QAndroidCameraFocusControl::onCameraOpened()
     m_supportedFocusModes.clear();
     m_continuousPictureFocusSupported = false;
     m_continuousVideoFocusSupported = false;
-
-    m_focusPointMode = QCameraFocus::FocusPointAuto;
-    m_actualFocusPoint = QPointF(0.5, 0.5);
-    m_customFocusPoint = QPointF();
     m_supportedFocusPointModes.clear();
-    m_focusZones.clear();
 
     QStringList focusModes = m_session->camera()->getSupportedFocusModes();
     for (int i = 0; i < focusModes.size(); ++i) {
@@ -220,10 +211,14 @@ void QAndroidCameraFocusControl::onCameraOpened()
     if (m_session->camera()->getMaxNumFocusAreas() > 0)
         m_supportedFocusPointModes << QCameraFocus::FocusPointCenter << QCameraFocus::FocusPointCustom;
 
-    emit focusModeChanged(focusMode());
-    emit focusPointModeChanged(m_focusPointMode);
-    emit customFocusPointChanged(m_customFocusPoint);
-    emit focusZonesChanged();
+    if (!m_supportedFocusModes.contains(m_focusMode))
+        setFocusModeHelper(QCameraFocus::AutoFocus);
+    if (!m_supportedFocusPointModes.contains(m_focusPointMode))
+        setFocusPointModeHelper(QCameraFocus::FocusPointAuto);
+
+    setFocusMode(m_focusMode);
+    setCustomFocusPoint(m_customFocusPoint);
+    setFocusPointMode(m_focusPointMode);
 }
 
 void QAndroidCameraFocusControl::updateFocusZones(QCameraFocusZone::FocusZoneStatus status)
@@ -234,25 +229,24 @@ void QAndroidCameraFocusControl::updateFocusZones(QCameraFocusZone::FocusZoneSta
     // create a focus zone (50x50 pixel) around the focus point
     m_focusZones.clear();
 
-    if (m_actualFocusPoint.isNull())
-        return;
+    if (!m_actualFocusPoint.isNull()) {
+        QSize viewportSize = m_session->camera()->previewSize();
 
-    QSize viewportSize = m_session->camera()->previewSize();
+        if (!viewportSize.isValid())
+            return;
 
-    if (!viewportSize.isValid())
-        return;
+        QSizeF focusSize(50.f / viewportSize.width(), 50.f / viewportSize.height());
+        float x = qBound(qreal(0),
+                         m_actualFocusPoint.x() - (focusSize.width() / 2),
+                         1.f - focusSize.width());
+        float y = qBound(qreal(0),
+                         m_actualFocusPoint.y() - (focusSize.height() / 2),
+                         1.f - focusSize.height());
 
-    QSizeF focusSize(50.f / viewportSize.width(), 50.f / viewportSize.height());
-    float x = qBound(qreal(0),
-                     m_actualFocusPoint.x() - (focusSize.width() / 2),
-                     1.f - focusSize.width());
-    float y = qBound(qreal(0),
-                     m_actualFocusPoint.y() - (focusSize.height() / 2),
-                     1.f - focusSize.height());
+        QRectF area(QPointF(x, y), focusSize);
 
-    QRectF area(QPointF(x, y), focusSize);
-
-    m_focusZones.append(QCameraFocusZone(area, status));
+        m_focusZones.append(QCameraFocusZone(area, status));
+    }
 
     emit focusZonesChanged();
 }
@@ -277,11 +271,12 @@ void QAndroidCameraFocusControl::onViewportSizeChanged()
     if (!m_focusZones.isEmpty())
         status = m_focusZones.at(0).status();
     updateFocusZones(status);
+    setCameraFocusArea();
 }
 
 void QAndroidCameraFocusControl::onCameraCaptureModeChanged()
 {
-    if (m_focusMode == QCameraFocus::ContinuousFocus) {
+    if (m_session->camera() && m_focusMode == QCameraFocus::ContinuousFocus) {
         QString focusMode;
         if ((m_session->captureMode().testFlag(QCamera::CaptureVideo) && m_continuousVideoFocusSupported)
                 || !m_continuousPictureFocusSupported) {

@@ -1,39 +1,31 @@
 /****************************************************************************
 **
-** Copyright (C) 2013 Digia Plc and/or its subsidiary(-ies).
-** Contact: http://www.qt-project.org/legal
+** Copyright (C) 2015 The Qt Company Ltd.
+** Contact: http://www.qt.io/licensing/
 **
 ** This file is part of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL$
+** $QT_BEGIN_LICENSE:LGPL21$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and Digia.  For licensing terms and
-** conditions see http://qt.digia.com/licensing.  For further information
-** use the contact form at http://qt.digia.com/contact-us.
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see http://www.qt.io/terms-conditions. For further
+** information use the contact form at http://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU Lesser General Public License version 2.1 requirements
-** will be met: http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 2.1 or version 3 as published by the Free
+** Software Foundation and appearing in the file LICENSE.LGPLv21 and
+** LICENSE.LGPLv3 included in the packaging of this file. Please review the
+** following information to ensure the GNU Lesser General Public License
+** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
+** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
 **
-** In addition, as a special exception, Digia gives you certain additional
-** rights.  These rights are described in the Digia Qt LGPL Exception
+** As a special exception, The Qt Company gives you certain additional
+** rights. These rights are described in The Qt Company LGPL Exception
 ** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3.0 as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU General Public License version 3.0 requirements will be
-** met: http://www.gnu.org/copyleft/gpl.html.
-**
 **
 ** $QT_END_LICENSE$
 **
@@ -46,7 +38,12 @@
 
 #ifdef ANDROID
 #include <SLES/OpenSLES_Android.h>
+#include <QtCore/private/qjnihelpers_p.h>
+#include <QtCore/private/qjni_p.h>
 #endif
+
+#define MINIMUM_PERIOD_TIME_MS 5
+#define DEFAULT_PERIOD_TIME_MS 50
 
 #define CheckError(message) if (result != SL_RESULT_SUCCESS) { qWarning(message); return; }
 
@@ -55,6 +52,7 @@ Q_GLOBAL_STATIC(QOpenSLESEngine, openslesEngine);
 QOpenSLESEngine::QOpenSLESEngine()
     : m_engineObject(0)
     , m_engine(0)
+    , m_checkedInputFormats(false)
 {
     SLresult result;
 
@@ -66,8 +64,6 @@ QOpenSLESEngine::QOpenSLESEngine()
 
     result = (*m_engineObject)->GetInterface(m_engineObject, SL_IID_ENGINE, &m_engine);
     CheckError("Failed to get engine interface");
-
-    checkSupportedInputFormats();
 }
 
 QOpenSLESEngine::~QOpenSLESEngine()
@@ -118,20 +114,170 @@ QList<QByteArray> QOpenSLESEngine::availableDevices(QAudio::Mode mode) const
 
 QList<int> QOpenSLESEngine::supportedChannelCounts(QAudio::Mode mode) const
 {
-    if (mode == QAudio::AudioInput)
+    if (mode == QAudio::AudioInput) {
+        if (!m_checkedInputFormats)
+            const_cast<QOpenSLESEngine *>(this)->checkSupportedInputFormats();
         return m_supportedInputChannelCounts;
-    else
+    } else {
         return QList<int>() << 1 << 2;
+    }
 }
 
 QList<int> QOpenSLESEngine::supportedSampleRates(QAudio::Mode mode) const
 {
     if (mode == QAudio::AudioInput) {
+        if (!m_checkedInputFormats)
+            const_cast<QOpenSLESEngine *>(this)->checkSupportedInputFormats();
         return m_supportedInputSampleRates;
     } else {
         return QList<int>() << 8000 << 11025 << 12000 << 16000 << 22050
                             << 24000 << 32000 << 44100 << 48000;
     }
+}
+
+int QOpenSLESEngine::getOutputValue(QOpenSLESEngine::OutputValue type, int defaultValue)
+{
+#if defined(Q_OS_ANDROID) && !defined(Q_OS_ANDROID_NO_SDK)
+    static int sampleRate = 0;
+    static int framesPerBuffer = 0;
+    static const int sdkVersion = QtAndroidPrivate::androidSdkVersion();
+
+    if (sdkVersion < 17) // getProperty() was added in API level 17...
+        return defaultValue;
+
+    if (type == FramesPerBuffer && framesPerBuffer != 0)
+        return framesPerBuffer;
+
+    if (type == SampleRate && sampleRate != 0)
+        return sampleRate;
+
+    QJNIObjectPrivate ctx(QtAndroidPrivate::activity());
+    if (!ctx.isValid())
+        return defaultValue;
+
+
+    QJNIObjectPrivate audioServiceString = ctx.getStaticObjectField("android/content/Context",
+                                                                    "AUDIO_SERVICE",
+                                                                    "Ljava/lang/String;");
+    QJNIObjectPrivate am = ctx.callObjectMethod("getSystemService",
+                                                "(Ljava/lang/String;)Ljava/lang/Object;",
+                                                audioServiceString.object());
+    if (!am.isValid())
+        return defaultValue;
+
+    QJNIObjectPrivate sampleRateField = QJNIObjectPrivate::getStaticObjectField("android/media/AudioManager",
+                                                                                "PROPERTY_OUTPUT_SAMPLE_RATE",
+                                                                                "Ljava/lang/String;");
+    QJNIObjectPrivate framesPerBufferField = QJNIObjectPrivate::getStaticObjectField("android/media/AudioManager",
+                                                                                     "PROPERTY_OUTPUT_FRAMES_PER_BUFFER",
+                                                                                     "Ljava/lang/String;");
+
+    QJNIObjectPrivate sampleRateString = am.callObjectMethod("getProperty",
+                                                             "(Ljava/lang/String;)Ljava/lang/String;",
+                                                             sampleRateField.object());
+    QJNIObjectPrivate framesPerBufferString = am.callObjectMethod("getProperty",
+                                                                  "(Ljava/lang/String;)Ljava/lang/String;",
+                                                                  framesPerBufferField.object());
+
+    if (!sampleRateString.isValid() || !framesPerBufferString.isValid())
+        return defaultValue;
+
+    framesPerBuffer = framesPerBufferString.toString().toInt();
+    sampleRate = sampleRateString.toString().toInt();
+
+    if (type == FramesPerBuffer)
+        return framesPerBuffer;
+
+    if (type == SampleRate)
+        return sampleRate;
+
+#endif // Q_OS_ANDROID
+
+    return defaultValue;
+}
+
+int QOpenSLESEngine::getDefaultBufferSize(const QAudioFormat &format)
+{
+#if defined(Q_OS_ANDROID) && !defined(Q_OS_ANDROID_NO_SDK)
+    if (!format.isValid())
+        return 0;
+
+    const int channelConfig = [&format]() -> int
+    {
+        if (format.channelCount() == 1)
+            return 4; /* MONO */
+        else if (format.channelCount() == 2)
+            return 12; /* STEREO */
+        else if (format.channelCount() > 2)
+            return 1052; /* SURROUND */
+        else
+            return 1; /* DEFAULT */
+    }();
+
+    const int audioFormat = [&format]() -> int
+    {
+        if (format.sampleType() == QAudioFormat::Float && QtAndroidPrivate::androidSdkVersion() >= 21)
+            return 4; /* PCM_FLOAT */
+        else if (format.sampleSize() == 8)
+            return 3; /* PCM_8BIT */
+        else if (format.sampleSize() == 16)
+            return 2; /* PCM_16BIT*/
+        else
+            return 1; /* DEFAULT */
+    }();
+
+    const int sampleRate = format.sampleRate();
+    return QJNIObjectPrivate::callStaticMethod<jint>("android/media/AudioTrack",
+                                                     "getMinBufferSize",
+                                                     "(III)I",
+                                                     sampleRate,
+                                                     channelConfig,
+                                                     audioFormat);
+#else
+    return format.bytesForDuration(DEFAULT_PERIOD_TIME_MS);
+#endif // Q_OS_ANDROID
+}
+
+int QOpenSLESEngine::getLowLatencyBufferSize(const QAudioFormat &format)
+{
+    return format.bytesForFrames(QOpenSLESEngine::getOutputValue(QOpenSLESEngine::FramesPerBuffer,
+                                                                 format.framesForDuration(MINIMUM_PERIOD_TIME_MS)));
+}
+
+bool QOpenSLESEngine::supportsLowLatency()
+{
+#if defined(Q_OS_ANDROID) && !defined(Q_OS_ANDROID_NO_SDK)
+    static int isSupported = -1;
+
+    if (isSupported != -1)
+        return (isSupported == 1);
+
+    QJNIObjectPrivate ctx(QtAndroidPrivate::activity());
+    if (!ctx.isValid())
+        return false;
+
+    QJNIObjectPrivate pm = ctx.callObjectMethod("getPackageManager", "()Landroid/content/pm/PackageManager;");
+    if (!pm.isValid())
+        return false;
+
+    QJNIObjectPrivate audioFeatureField = QJNIObjectPrivate::getStaticObjectField("android/content/pm/PackageManager",
+                                                                                  "FEATURE_AUDIO_LOW_LATENCY",
+                                                                                  "Ljava/lang/String;");
+    if (!audioFeatureField.isValid())
+        return false;
+
+    isSupported = pm.callMethod<jboolean>("hasSystemFeature",
+                                          "(Ljava/lang/String;)Z",
+                                          audioFeatureField.object());
+    return (isSupported == 1);
+#else
+    return true;
+#endif // Q_OS_ANDROID
+}
+
+bool QOpenSLESEngine::printDebugInfo()
+{
+    return qEnvironmentVariableIsSet("QT_OPENSL_INFO");
 }
 
 void QOpenSLESEngine::checkSupportedInputFormats()
@@ -177,6 +323,8 @@ void QOpenSLESEngine::checkSupportedInputFormats()
         if (inputFormatIsSupported(format))
             m_supportedInputChannelCounts.append(2);
     }
+
+    m_checkedInputFormats = true;
 }
 
 bool QOpenSLESEngine::inputFormatIsSupported(SLDataFormat_PCM format)

@@ -1,39 +1,31 @@
 /****************************************************************************
 **
-** Copyright (C) 2013 Digia Plc and/or its subsidiary(-ies).
-** Contact: http://www.qt-project.org/legal
+** Copyright (C) 2015 The Qt Company Ltd.
+** Contact: http://www.qt.io/licensing/
 **
 ** This file is part of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL$
+** $QT_BEGIN_LICENSE:LGPL21$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and Digia.  For licensing terms and
-** conditions see http://qt.digia.com/licensing.  For further information
-** use the contact form at http://qt.digia.com/contact-us.
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see http://www.qt.io/terms-conditions. For further
+** information use the contact form at http://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU Lesser General Public License version 2.1 requirements
-** will be met: http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 2.1 or version 3 as published by the Free
+** Software Foundation and appearing in the file LICENSE.LGPLv21 and
+** LICENSE.LGPLv3 included in the packaging of this file. Please review the
+** following information to ensure the GNU Lesser General Public License
+** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
+** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
 **
-** In addition, as a special exception, Digia gives you certain additional
-** rights.  These rights are described in the Digia Qt LGPL Exception
+** As a special exception, The Qt Company gives you certain additional
+** rights. These rights are described in The Qt Company LGPL Exception
 ** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3.0 as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU General Public License version 3.0 requirements will be
-** met: http://www.gnu.org/copyleft/gpl.html.
-**
 **
 ** $QT_END_LICENSE$
 **
@@ -41,8 +33,11 @@
 
 #include "playlistfileparser_p.h"
 #include <qfileinfo.h>
+#include <QtCore/QDebug>
 #include <QtNetwork/QNetworkReply>
+#include <QtNetwork/QNetworkRequest>
 #include "qmediaobject_p.h"
+#include <private/qobject_p.h>
 #include "qmediametadata.h"
 
 QT_BEGIN_NAMESPACE
@@ -58,6 +53,30 @@ public:
     }
 
     virtual void parseLine(int lineIndex, const QString& line, const QUrl& root) = 0;
+
+protected:
+    QUrl expandToFullPath(const QUrl &root, const QString &line)
+    {
+        // On Linux, backslashes are not converted to forward slashes :/
+        if (line.startsWith(QLatin1String("//")) || line.startsWith(QLatin1String("\\\\"))) {
+            // Network share paths are not resolved
+            return QUrl::fromLocalFile(line);
+        }
+
+        QUrl url(line);
+        if (url.scheme().isEmpty()) {
+            // Resolve it relative to root
+            if (root.isLocalFile())
+                return QUrl::fromUserInput(line, root.adjusted(QUrl::RemoveFilename).toLocalFile(), QUrl::AssumeLocalFile);
+            else
+                return root.resolved(url);
+        } else if (url.scheme().length() == 1) {
+            // Assume it's a drive letter for a Windows path
+            url = QUrl::fromLocalFile(line);
+        }
+
+        return url;
+    }
 
 Q_SIGNALS:
     void newItem(const QVariant& content);
@@ -100,7 +119,7 @@ public:
                     m_extraInfo.clear();
                     int artistStart = line.indexOf(QLatin1String(","), 8);
                     bool ok = false;
-                    int length = line.mid(8, artistStart < 8 ? -1 : artistStart - 8).trimmed().toInt(&ok);
+                    int length = line.midRef(8, artistStart < 8 ? -1 : artistStart - 8).trimmed().toInt(&ok);
                     if (ok && length > 0) {
                         //convert from second to milisecond
                         m_extraInfo[QMediaMetaData::Duration] = QVariant(length * 1000);
@@ -108,13 +127,13 @@ public:
                     if (artistStart > 0) {
                         int titleStart = getSplitIndex(line, artistStart);
                         if (titleStart > artistStart) {
-                            m_extraInfo[QMediaMetaData::Author] = line.mid(artistStart + 1,
-                                                             titleStart - artistStart - 1).trimmed().
+                            m_extraInfo[QMediaMetaData::Author] = line.midRef(artistStart + 1,
+                                                             titleStart - artistStart - 1).trimmed().toString().
                                                              replace(QLatin1String("--"), QLatin1String("-"));
-                            m_extraInfo[QMediaMetaData::Title] = line.mid(titleStart + 1).trimmed().
+                            m_extraInfo[QMediaMetaData::Title] = line.midRef(titleStart + 1).trimmed().toString().
                                                    replace(QLatin1String("--"), QLatin1String("-"));
                         } else {
-                            m_extraInfo[QMediaMetaData::Title] = line.mid(artistStart + 1).trimmed().
+                            m_extraInfo[QMediaMetaData::Title] = line.midRef(artistStart + 1).trimmed().toString().
                                                    replace(QLatin1String("--"), QLatin1String("-"));
                         }
                     }
@@ -146,29 +165,6 @@ public:
         return -1;
     }
 
-    QUrl expandToFullPath(const QUrl& root, const QString& line)
-    {
-        // On Linux, backslashes are not converted to forward slashes :/
-        if (line.startsWith(QLatin1String("//")) || line.startsWith(QLatin1String("\\\\"))) {
-            // Network share paths are not resolved
-            return QUrl::fromLocalFile(line);
-        }
-
-        QUrl url(line);
-        if (url.scheme().isEmpty()) {
-            // Resolve it relative to root
-            if (root.isLocalFile())
-                return root.resolved(QUrl::fromLocalFile(line));
-            else
-                return root.resolved(url);
-        } else if (url.scheme().length() == 1) {
-            // Assume it's a drive letter for a Windows path
-            url = QUrl::fromLocalFile(line);
-        }
-
-        return url;
-    }
-
 private:
     bool            m_extendedFormat;
     QVariantMap     m_extraInfo;
@@ -180,26 +176,8 @@ class PLSParser : public ParserBase
 public:
     PLSParser(QObject *parent)
         : ParserBase(parent)
-        , m_state(Header)
-        , m_count(0)
-        , m_readFlags(0)
     {
     }
-
-    enum ReadFlags
-    {
-        FileRead = 0x1,
-        TitleRead = 0x2,
-        LengthRead = 0x4,
-        All = FileRead | TitleRead | LengthRead
-    };
-
-    enum State
-    {
-        Header,
-        Track,
-        Footer
-    };
 
 /*
  *
@@ -239,98 +217,33 @@ NumberOfEntries=2
 
 Version=2
 */
-    inline bool containsFlag(const ReadFlags& flag)
+    void parseLine(int, const QString &line, const QUrl &root)
     {
-        return (m_readFlags & int(flag)) == flag;
+        // We ignore everything but 'File' entries, since that's the only thing we care about.
+        if (!line.startsWith(QLatin1String("File")))
+            return;
+
+        QString value = getValue(line);
+        if (value.isEmpty())
+            return;
+
+        emit newItem(expandToFullPath(root, value));
     }
 
-    inline void setFlag(const ReadFlags& flag)
-    {
-        m_readFlags |= int(flag);
-    }
-
-    void parseLine(int lineIndex, const QString& line, const QUrl&)
-    {
-        switch (m_state) {
-        case Header:
-            if (line == QLatin1String("[playlist]")) {
-                m_state = Track;
-                setCount(1);
-            }
-            break;
-        case Track:
-            if (!containsFlag(FileRead) && line.startsWith(m_fileName)) {
-                m_item[QLatin1String("url")] = getValue(lineIndex, line);
-                setFlag(FileRead);
-            } else if (!containsFlag(TitleRead) && line.startsWith(m_titleName)) {
-                m_item[QMediaMetaData::Title] = getValue(lineIndex, line);
-                setFlag(TitleRead);
-            } else if (!containsFlag(LengthRead) && line.startsWith(m_lengthName)) {
-                //convert from seconds to miliseconds
-                int length = getValue(lineIndex, line).toInt();
-                if (length > 0)
-                    m_item[QMediaMetaData::Duration] = length * 1000;
-                setFlag(LengthRead);
-            } else if (line.startsWith(QLatin1String("NumberOfEntries"))) {
-                m_state = Footer;
-                int entries = getValue(lineIndex, line).toInt();
-                int count = m_readFlags == 0 ? (m_count - 1) : m_count;
-                if (entries != count) {
-                    emit error(QPlaylistFileParser::FormatError, tr("Error parsing playlist: %1, expected count = %2").
-                               arg(line, QString::number(count)));
-                }
-                break;
-            }
-            if (m_readFlags == int(All)) {
-                emit newItem(m_item);
-                setCount(m_count + 1);
-            }
-            break;
-        case Footer:
-            if (line.startsWith(QLatin1String("Version"))) {
-                int version = getValue(lineIndex, line).toInt();
-                if (version != 2)
-                    emit error(QPlaylistFileParser::FormatError, QString(tr("Error parsing playlist at line[%1], expected version = 2")).arg(line));
-            }
-            break;
-        }
-    }
-
-    QString getValue(int lineIndex, const QString& line) {
+    QString getValue(const QString& line) {
         int start = line.indexOf('=');
-        if (start < 0) {
-            emit error(QPlaylistFileParser::FormatError, QString(tr("Error parsing playlist at line[%1]:%2")).arg(QString::number(lineIndex), line));
+        if (start < 0)
             return QString();
-        }
-        return line.mid(start + 1).trimmed();
+        return line.midRef(start + 1).trimmed().toString();
     }
-
-    void setCount(int count) {
-        m_count = count;
-        m_fileName = QString(tr("File%1")).arg(count);
-        m_titleName = QString(tr("Title%1")).arg(count);
-        m_lengthName = QString(tr("Length%1")).arg(count);
-        m_item.clear();
-        m_readFlags = 0;
-    }
-
-private:
-    State m_state;
-    int  m_count;
-    QString m_titleName;
-    QString m_fileName;
-    QString m_lengthName;
-    QVariantMap m_item;
-    int m_readFlags;
 };
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-class QPlaylistFileParserPrivate : public QObject
+class QPlaylistFileParserPrivate : public QObjectPrivate
 {
-    Q_OBJECT
-    Q_DECLARE_NON_CONST_PUBLIC(QPlaylistFileParser)
+    Q_DECLARE_PUBLIC(QPlaylistFileParser)
 public:
     QPlaylistFileParserPrivate()
         : m_source(0)
@@ -357,8 +270,6 @@ public:
     ParserBase     *m_currentParser;
     QNetworkAccessManager m_mgr;
 
-    QPlaylistFileParser *q_ptr;
-
 private:
     void processLine(int startIndex, int length);
 };
@@ -379,25 +290,26 @@ void QPlaylistFileParserPrivate::processLine(int startIndex, int length)
 
         switch (m_type) {
         case QPlaylistFileParser::UNKNOWN:
-            emit q->error(QPlaylistFileParser::FormatError, QString(tr("%1 playlist type is unknown")).arg(m_root.toString()));
+            emit q->error(QPlaylistFileParser::FormatError,
+                          QPlaylistFileParser::tr("%1 playlist type is unknown").arg(m_root.toString()));
             q->stop();
             return;
         case QPlaylistFileParser::M3U:
-            m_currentParser = new M3UParser(this);
+            m_currentParser = new M3UParser(q);
             break;
         case QPlaylistFileParser::M3U8:
-            m_currentParser = new M3UParser(this);
+            m_currentParser = new M3UParser(q);
             m_utf8 = true;
             break;
         case QPlaylistFileParser::PLS:
-            m_currentParser = new PLSParser(this);
+            m_currentParser = new PLSParser(q);
             break;
         }
         Q_ASSERT(m_currentParser);
-        connect(m_currentParser, SIGNAL(newItem(QVariant)), q, SIGNAL(newItem(QVariant)));
-        connect(m_currentParser, SIGNAL(finished()), q, SLOT(_q_handleParserFinished()));
-        connect(m_currentParser, SIGNAL(error(QPlaylistFileParser::ParserError, QString)),
-                q, SLOT(_q_handleParserError(QPlaylistFileParser::ParserError, QString)));
+        QObject::connect(m_currentParser, SIGNAL(newItem(QVariant)), q, SIGNAL(newItem(QVariant)));
+        QObject::connect(m_currentParser, SIGNAL(finished()), q, SLOT(_q_handleParserFinished()));
+        QObject::connect(m_currentParser, SIGNAL(error(QPlaylistFileParser::ParserError,QString)),
+                         q, SLOT(_q_handleParserError(QPlaylistFileParser::ParserError,QString)));
     }
 
     QString line;
@@ -439,7 +351,7 @@ void QPlaylistFileParserPrivate::_q_handleData()
 
         if (m_buffer.length() - processedBytes >= LINE_LIMIT) {
             qWarning() << "error parsing playlist["<< m_root << "] with line content >= 4096 bytes.";
-            emit q->error(QPlaylistFileParser::FormatError, tr("invalid line in playlist file"));
+            emit q->error(QPlaylistFileParser::FormatError, QPlaylistFileParser::tr("invalid line in playlist file"));
             q->stop();
             return;
         }
@@ -487,7 +399,7 @@ void QPlaylistFileParserPrivate::_q_handleParserFinished()
     Q_Q(QPlaylistFileParser);
     bool isParserValid = (m_currentParser != 0);
     if (!isParserValid)
-        emit q->error(QPlaylistFileParser::FormatNotSupportedError, tr("Empty file provided"));
+        emit q->error(QPlaylistFileParser::FormatNotSupportedError, QPlaylistFileParser::tr("Empty file provided"));
 
     q->stop();
 
@@ -497,9 +409,9 @@ void QPlaylistFileParserPrivate::_q_handleParserFinished()
 
 
 QPlaylistFileParser::QPlaylistFileParser(QObject *parent)
-    :QObject(parent), d_ptr(new QPlaylistFileParserPrivate)
+    : QObject(*new QPlaylistFileParserPrivate, parent)
 {
-    d_func()->q_ptr = this;
+
 }
 
 QPlaylistFileParser::FileType QPlaylistFileParser::findPlaylistType(const QString& uri, const QString& mime, const void *data, quint32 size)
@@ -583,8 +495,8 @@ void QPlaylistFileParser::stop()
     if (d->m_currentParser) {
         disconnect(d->m_currentParser, SIGNAL(newItem(QVariant)), this, SIGNAL(newItem(QVariant)));
         disconnect(d->m_currentParser, SIGNAL(finished()), this, SLOT(_q_handleParserFinished()));
-        disconnect(d->m_currentParser, SIGNAL(error(QPlaylistFileParser::ParserError, QString)),
-                   this, SLOT(_q_handleParserError(QPlaylistFileParser::ParserError, QString)));
+        disconnect(d->m_currentParser, SIGNAL(error(QPlaylistFileParser::ParserError,QString)),
+                   this, SLOT(_q_handleParserError(QPlaylistFileParser::ParserError,QString)));
         d->m_currentParser->deleteLater();
         d->m_currentParser = 0;
     }

@@ -1,7 +1,7 @@
 /****************************************************************************
 **
-** Copyright (C) 2013 Digia Plc and/or its subsidiary(-ies).
-** Contact: http://www.qt-project.org/legal
+** Copyright (C) 2015 The Qt Company Ltd.
+** Contact: http://www.qt.io/licensing/
 **
 ** This file is part of the examples of the Qt Toolkit.
 **
@@ -17,8 +17,8 @@
 **     notice, this list of conditions and the following disclaimer in
 **     the documentation and/or other materials provided with the
 **     distribution.
-**   * Neither the name of Digia Plc and its Subsidiary(-ies) nor the names
-**     of its contributors may be used to endorse or promote products derived
+**   * Neither the name of The Qt Company Ltd nor the names of its
+**     contributors may be used to endorse or promote products derived
 **     from this software without specific prior written permission.
 **
 **
@@ -66,7 +66,8 @@ Generator::Generator(const QAudioFormat &format,
     :   QIODevice(parent)
     ,   m_pos(0)
 {
-    generateData(format, durationUs, sampleRate);
+    if (format.isValid())
+        generateData(format, durationUs, sampleRate);
 }
 
 Generator::~Generator()
@@ -133,11 +134,13 @@ void Generator::generateData(const QAudioFormat &format, qint64 durationUs, int 
 qint64 Generator::readData(char *data, qint64 len)
 {
     qint64 total = 0;
-    while (len - total > 0) {
-        const qint64 chunk = qMin((m_buffer.size() - m_pos), len - total);
-        memcpy(data + total, m_buffer.constData() + m_pos, chunk);
-        m_pos = (m_pos + chunk) % m_buffer.size();
-        total += chunk;
+    if (!m_buffer.isEmpty()) {
+        while (len - total > 0) {
+            const qint64 chunk = qMin((m_buffer.size() - m_pos), len - total);
+            memcpy(data + total, m_buffer.constData() + m_pos, chunk);
+            m_pos = (m_pos + chunk) % m_buffer.size();
+            total += chunk;
+        }
     }
     return total;
 }
@@ -156,7 +159,7 @@ qint64 Generator::bytesAvailable() const
 }
 
 AudioTest::AudioTest()
-    :   m_pullTimer(new QTimer(this))
+    :   m_pushTimer(new QTimer(this))
     ,   m_modeButton(0)
     ,   m_suspendResumeButton(0)
     ,   m_deviceBox(0)
@@ -164,6 +167,7 @@ AudioTest::AudioTest()
     ,   m_generator(0)
     ,   m_audioOutput(0)
     ,   m_output(0)
+    ,   m_pullMode(true)
     ,   m_buffer(BufferSize, 0)
 {
     initializeWindow();
@@ -176,8 +180,12 @@ void AudioTest::initializeWindow()
     QScopedPointer<QVBoxLayout> layout(new QVBoxLayout);
 
     m_deviceBox = new QComboBox(this);
-    foreach (const QAudioDeviceInfo &deviceInfo, QAudioDeviceInfo::availableDevices(QAudio::AudioOutput))
-        m_deviceBox->addItem(deviceInfo.deviceName(), qVariantFromValue(deviceInfo));
+    const QAudioDeviceInfo &defaultDeviceInfo = QAudioDeviceInfo::defaultOutputDevice();
+    m_deviceBox->addItem(defaultDeviceInfo.deviceName(), qVariantFromValue(defaultDeviceInfo));
+    foreach (const QAudioDeviceInfo &deviceInfo, QAudioDeviceInfo::availableDevices(QAudio::AudioOutput)) {
+        if (deviceInfo != defaultDeviceInfo)
+            m_deviceBox->addItem(deviceInfo.deviceName(), qVariantFromValue(deviceInfo));
+    }
     connect(m_deviceBox,SIGNAL(activated(int)),SLOT(deviceChanged(int)));
     layout->addWidget(m_deviceBox);
 
@@ -213,9 +221,7 @@ void AudioTest::initializeWindow()
 
 void AudioTest::initializeAudio()
 {
-    connect(m_pullTimer, SIGNAL(timeout()), SLOT(pullTimerExpired()));
-
-    m_pullMode = true;
+    connect(m_pushTimer, SIGNAL(timeout()), SLOT(pushTimerExpired()));
 
     m_format.setSampleRate(DataSampleRateHz);
     m_format.setChannelCount(1);
@@ -224,12 +230,14 @@ void AudioTest::initializeAudio()
     m_format.setByteOrder(QAudioFormat::LittleEndian);
     m_format.setSampleType(QAudioFormat::SignedInt);
 
-    QAudioDeviceInfo info(QAudioDeviceInfo::defaultOutputDevice());
+    QAudioDeviceInfo info(m_device);
     if (!info.isFormatSupported(m_format)) {
         qWarning() << "Default format not supported - trying to use nearest";
         m_format = info.nearestFormat(m_format);
     }
 
+    if (m_generator)
+        delete m_generator;
     m_generator = new Generator(m_format, DurationSeconds*1000000, ToneSampleRateHz, this);
 
     createAudioOutput();
@@ -240,8 +248,6 @@ void AudioTest::createAudioOutput()
     delete m_audioOutput;
     m_audioOutput = 0;
     m_audioOutput = new QAudioOutput(m_device, m_format, this);
-    connect(m_audioOutput, SIGNAL(notify()), SLOT(notified()));
-    connect(m_audioOutput, SIGNAL(stateChanged(QAudio::State)), SLOT(handleStateChanged(QAudio::State)));
     m_generator->start();
     m_audioOutput->start(m_generator);
     m_volumeSlider->setValue(int(m_audioOutput->volume()*100.0f));
@@ -254,12 +260,12 @@ AudioTest::~AudioTest()
 
 void AudioTest::deviceChanged(int index)
 {
-    m_pullTimer->stop();
+    m_pushTimer->stop();
     m_generator->stop();
     m_audioOutput->stop();
     m_audioOutput->disconnect(this);
     m_device = m_deviceBox->itemData(index).value<QAudioDeviceInfo>();
-    createAudioOutput();
+    initializeAudio();
 }
 
 void AudioTest::volumeChanged(int value)
@@ -268,14 +274,7 @@ void AudioTest::volumeChanged(int value)
         m_audioOutput->setVolume(qreal(value/100.0f));
 }
 
-void AudioTest::notified()
-{
-    qWarning() << "bytesFree = " << m_audioOutput->bytesFree()
-               << ", " << "elapsedUSecs = " << m_audioOutput->elapsedUSecs()
-               << ", " << "processedUSecs = " << m_audioOutput->processedUSecs();
-}
-
-void AudioTest::pullTimerExpired()
+void AudioTest::pushTimerExpired()
 {
     if (m_audioOutput && m_audioOutput->state() != QAudio::StoppedState) {
         int chunks = m_audioOutput->bytesFree()/m_audioOutput->periodSize();
@@ -292,15 +291,17 @@ void AudioTest::pullTimerExpired()
 
 void AudioTest::toggleMode()
 {
-    m_pullTimer->stop();
+    m_pushTimer->stop();
     m_audioOutput->stop();
 
     if (m_pullMode) {
+        //switch to push mode (periodically push to QAudioOutput using a timer)
         m_modeButton->setText(tr(PULL_MODE_LABEL));
         m_output = m_audioOutput->start();
         m_pullMode = false;
-        m_pullTimer->start(20);
+        m_pushTimer->start(20);
     } else {
+        //switch to pull mode (QAudioOutput pulls from Generator as needed)
         m_modeButton->setText(tr(PUSH_MODE_LABEL));
         m_pullMode = true;
         m_audioOutput->start(m_generator);
@@ -312,23 +313,16 @@ void AudioTest::toggleMode()
 void AudioTest::toggleSuspendResume()
 {
     if (m_audioOutput->state() == QAudio::SuspendedState) {
-        qWarning() << "status: Suspended, resume()";
         m_audioOutput->resume();
         m_suspendResumeButton->setText(tr(SUSPEND_LABEL));
     } else if (m_audioOutput->state() == QAudio::ActiveState) {
-        qWarning() << "status: Active, suspend()";
         m_audioOutput->suspend();
         m_suspendResumeButton->setText(tr(RESUME_LABEL));
     } else if (m_audioOutput->state() == QAudio::StoppedState) {
-        qWarning() << "status: Stopped, resume()";
         m_audioOutput->resume();
         m_suspendResumeButton->setText(tr(SUSPEND_LABEL));
     } else if (m_audioOutput->state() == QAudio::IdleState) {
-        qWarning() << "status: IdleState";
+        // no-op
     }
 }
 
-void AudioTest::handleStateChanged(QAudio::State state)
-{
-    qWarning() << "state = " << state;
-}

@@ -1,7 +1,7 @@
 /****************************************************************************
 **
-** Copyright (C) 2013 Digia Plc and/or its subsidiary(-ies).
-** Contact: http://www.qt-project.org/legal
+** Copyright (C) 2015 The Qt Company Ltd.
+** Contact: http://www.qt.io/licensing/
 **
 ** This file is part of the documentation of the Qt Toolkit.
 **
@@ -10,15 +10,15 @@
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and Digia.  For licensing terms and
-** conditions see http://qt.digia.com/licensing.  For further information
-** use the contact form at http://qt.digia.com/contact-us.
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see http://www.qt.io/terms-conditions. For further
+** information use the contact form at http://www.qt.io/contact-us.
 **
 ** GNU Free Documentation License Usage
 ** Alternatively, this file may be used under the terms of the GNU Free
 ** Documentation License version 1.3 as published by the Free Software
 ** Foundation and appearing in the file included in the packaging of
-** this file.  Please review the following information to ensure
+** this file. Please review the following information to ensure
 ** the GNU Free Documentation License version 1.3 requirements
 ** will be met: http://www.gnu.org/copyleft/fdl.html.
 ** $QT_END_LICENSE$
@@ -81,52 +81,52 @@ For some quick recipes, look at the overviews above and consult this table:
         \li QSoundEffect
     \row
         \li Playing low latency audio
-        \li \l{audioinput},
-            \l{spectrum}
+        \li \l{Audio Input Example}{audioinput},
+            \l{Spectrum Example}{spectrum}
         \li
         \li QAudioOutput
     \row
         \li Playing encoded audio (MP3, AAC etc)
-        \li \l{player}
+        \li \l{Media Player Example}{player}
         \li \l Audio, \l {MediaPlayer}
         \li QMediaPlayer
     \row
         \li Accessing raw audio input data
-        \li \l{spectrum},
-            \l{audioinput}
+        \li \l{Spectrum Example}{spectrum},
+            \l{Audio Input Example}{audioinput}
         \li
         \li QAudioInput
     \row
         \li Recording encoded audio data
-        \li \l{audiorecorder}
+        \li \l{Audio Recorder Example}{audiorecorder}
         \li
         \li QAudioRecorder
     \row
         \li Discovering raw audio devices
-        \li \l{audiodevices}
+        \li \l{Audio Devices Example}{audiodevices}
         \li
         \li QAudioDeviceInfo
     \row
         \li Video Playback
-        \li \l{player},
-            \l{video/qmlvideo}{qmlvideo},
-            \l{video/qmlvideofx}{qmlvideofx}
+        \li \l{Media Player Example}{player},
+            \l{QML Video Example}{qmlvideo},
+            \l{QML Video Shader Effects Example}{qmlvideofx}
         \li \l MediaPlayer, \l VideoOutput, \l Video
         \li QMediaPlayer, QVideoWidget, QGraphicsVideoItem
     \row
         \li Video Processing
-        \li \l {video/qmlvideofx}{qmlvideofx}
+        \li \l {QML Video Example}{qmlvideofx}
         \li \l {MediaPlayer}, \l VideoOutput
         \li QMediaPlayer, QAbstractVideoSurface, QVideoFrame
     \row
         \li Listening to the radio
-        \li \l {declarative-radio}
+        \li \l {Declarative Radio Example}{declarative-radio}
         \li \l Radio, \l RadioData
         \li QRadioTuner, QRadioData
     \row
         \li Accessing camera viewfinder
         \li \l {Camera Example}{camera},
-            \l {declarative-camera}
+            \l {QML Camera Example}{declarative-camera}
         \li \l Camera, \l VideoOutput
         \li QCamera, QVideoWidget, QGraphicsVideoItem
     \row
@@ -137,13 +137,13 @@ For some quick recipes, look at the overviews above and consult this table:
     \row
         \li Capturing photos
         \li \l {Camera Example}{camera},
-            \l {declarative-camera}
+            \l {QML Camera Example}{declarative-camera}
         \li \l Camera
         \li QCamera, QCameraImageCapture
     \row
         \li Capturing movies
         \li \l {Camera Example}{camera},
-            \l {declarative-camera}
+            \l {QML Camera Example}{declarative-camera}
         \li \l Camera
         \li QCamera, QMediaRecorder
     \row
@@ -177,12 +177,12 @@ what changed, and what you might need to change when porting code.
 \section2 QML Types
 The QML types are accessed by using:
 \code
-import QtMultimedia 5.0
+import QtMultimedia 5.6
 \endcode
 \annotatedlist multimedia_qml
 The following types are accessed by using \l{Qt Audio Engine QML Types}{Qt Audio Engine}:
 \code
-import QtAudioEngine 1.0
+import QtAudioEngine 1.1
 \endcode
 \annotatedlist multimedia_audioengine
 

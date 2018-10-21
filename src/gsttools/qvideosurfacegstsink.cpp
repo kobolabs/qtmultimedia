@@ -1,39 +1,31 @@
 /****************************************************************************
 **
-** Copyright (C) 2013 Digia Plc and/or its subsidiary(-ies).
-** Contact: http://www.qt-project.org/legal
+** Copyright (C) 2015 The Qt Company Ltd.
+** Contact: http://www.qt.io/licensing/
 **
 ** This file is part of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL$
+** $QT_BEGIN_LICENSE:LGPL21$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and Digia.  For licensing terms and
-** conditions see http://qt.digia.com/licensing.  For further information
-** use the contact form at http://qt.digia.com/contact-us.
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see http://www.qt.io/terms-conditions. For further
+** information use the contact form at http://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU Lesser General Public License version 2.1 requirements
-** will be met: http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 2.1 or version 3 as published by the Free
+** Software Foundation and appearing in the file LICENSE.LGPLv21 and
+** LICENSE.LGPLv3 included in the packaging of this file. Please review the
+** following information to ensure the GNU Lesser General Public License
+** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
+** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
 **
-** In addition, as a special exception, Digia gives you certain additional
-** rights.  These rights are described in the Digia Qt LGPL Exception
+** As a special exception, The Qt Company gives you certain additional
+** rights. These rights are described in The Qt Company LGPL Exception
 ** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3.0 as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU General Public License version 3.0 requirements will be
-** met: http://www.gnu.org/copyleft/gpl.html.
-**
 **
 ** $QT_END_LICENSE$
 **
@@ -49,7 +41,12 @@
 #include <private/qmediapluginloader_p.h>
 #include "qgstvideobuffer_p.h"
 
+#include "qgstutils_p.h"
 #include "qvideosurfacegstsink_p.h"
+
+#if GST_VERSION_MAJOR >=1
+#include <gst/video/video.h>
+#endif
 
 //#define DEBUG_VIDEO_SURFACE_SINK
 
@@ -64,17 +61,18 @@ QVideoSurfaceGstDelegate::QVideoSurfaceGstDelegate(
     : m_surface(surface)
     , m_pool(0)
     , m_renderReturn(GST_FLOW_ERROR)
-    , m_lastPrerolledBuffer(0)
     , m_bytesPerLine(0)
     , m_startCanceled(false)
 {
     if (m_surface) {
         foreach (QObject *instance, bufferPoolLoader()->instances(QGstBufferPoolPluginKey)) {
             QGstBufferPoolInterface* plugin = qobject_cast<QGstBufferPoolInterface*>(instance);
+
             if (plugin) {
                 m_pools.append(plugin);
             }
         }
+
         updateSupportedFormats();
         connect(m_surface, SIGNAL(supportedFormatsChanged()), this, SLOT(updateSupportedFormats()));
     }
@@ -82,7 +80,6 @@ QVideoSurfaceGstDelegate::QVideoSurfaceGstDelegate(
 
 QVideoSurfaceGstDelegate::~QVideoSurfaceGstDelegate()
 {
-    setLastPrerolledBuffer(0);
 }
 
 QList<QVideoFrame::PixelFormat> QVideoSurfaceGstDelegate::supportedPixelFormats(QAbstractVideoBuffer::HandleType handleType) const
@@ -165,6 +162,15 @@ void QVideoSurfaceGstDelegate::stop()
     m_started = false;
 }
 
+void QVideoSurfaceGstDelegate::unlock()
+{
+    QMutexLocker locker(&m_mutex);
+
+    m_startCanceled = true;
+    m_setupCondition.wakeAll();
+    m_renderCondition.wakeAll();
+}
+
 bool QVideoSurfaceGstDelegate::isActive()
 {
     QMutexLocker locker(&m_mutex);
@@ -176,6 +182,21 @@ void QVideoSurfaceGstDelegate::clearPoolBuffers()
     QMutexLocker locker(&m_poolMutex);
     if (m_pool)
         m_pool->clear();
+}
+
+void QVideoSurfaceGstDelegate::flush()
+{
+    QMutexLocker locker(&m_mutex);
+
+    m_frame = QVideoFrame();
+    m_renderCondition.wakeAll();
+
+    if (QThread::currentThread() == thread()) {
+        if (!m_surface.isNull())
+            m_surface->present(m_frame);
+    } else {
+        QMetaObject::invokeMethod(this, "queuedFlush", Qt::QueuedConnection);
+    }
 }
 
 GstFlowReturn QVideoSurfaceGstDelegate::render(GstBuffer *buffer)
@@ -201,13 +222,15 @@ GstFlowReturn QVideoSurfaceGstDelegate::render(GstBuffer *buffer)
             m_format.frameSize(),
             m_format.pixelFormat());
 
-    QVideoSurfaceGstSink::setFrameTimeStamps(&m_frame, buffer);
+    QGstUtils::setFrameTimeStamps(&m_frame, buffer);
 
     m_renderReturn = GST_FLOW_OK;
 
     if (QThread::currentThread() == thread()) {
         if (!m_surface.isNull())
             m_surface->present(m_frame);
+        else
+            qWarning() << "m_surface.isNull().";
     } else {
         QMetaObject::invokeMethod(this, "queuedRender", Qt::QueuedConnection);
         m_renderCondition.wait(&m_mutex, 300);
@@ -217,27 +240,11 @@ GstFlowReturn QVideoSurfaceGstDelegate::render(GstBuffer *buffer)
     return m_renderReturn;
 }
 
-void QVideoSurfaceGstDelegate::setLastPrerolledBuffer(GstBuffer *prerolledBuffer)
-{
-    // discard previously stored buffer
-    if (m_lastPrerolledBuffer) {
-        gst_buffer_unref(m_lastPrerolledBuffer);
-        m_lastPrerolledBuffer = 0;
-    }
-
-    if (!prerolledBuffer)
-        return;
-
-    // store a reference to the buffer
-    Q_ASSERT(!m_lastPrerolledBuffer);
-    m_lastPrerolledBuffer = prerolledBuffer;
-    gst_buffer_ref(m_lastPrerolledBuffer);
-}
-
 void QVideoSurfaceGstDelegate::queuedStart()
 {
+    QMutexLocker locker(&m_mutex);
+
     if (!m_startCanceled) {
-        QMutexLocker locker(&m_mutex);
         m_started = m_surface->start(m_format);
         m_setupCondition.wakeAll();
     }
@@ -252,9 +259,20 @@ void QVideoSurfaceGstDelegate::queuedStop()
     m_setupCondition.wakeAll();
 }
 
+void QVideoSurfaceGstDelegate::queuedFlush()
+{
+    QMutexLocker locker(&m_mutex);
+
+    if (!m_surface.isNull())
+        m_surface->present(QVideoFrame());
+}
+
 void QVideoSurfaceGstDelegate::queuedRender()
 {
     QMutexLocker locker(&m_mutex);
+
+    if (!m_frame.isValid())
+        return;
 
     if (m_surface.isNull()) {
         qWarning() << "Rendering video frame to deleted surface, skip the frame";
@@ -308,90 +326,6 @@ void QVideoSurfaceGstDelegate::updateSupportedFormats()
         if (m_pool)
             m_supportedPoolPixelFormats = m_surface->supportedPixelFormats(m_pool->handleType());
     }
-}
-
-struct YuvFormat
-{
-    QVideoFrame::PixelFormat pixelFormat;
-    guint32 fourcc;
-    int bitsPerPixel;
-};
-
-static const YuvFormat qt_yuvColorLookup[] =
-{
-    { QVideoFrame::Format_YUV420P, GST_MAKE_FOURCC('I','4','2','0'), 8 },
-    { QVideoFrame::Format_YV12,    GST_MAKE_FOURCC('Y','V','1','2'), 8 },
-    { QVideoFrame::Format_UYVY,    GST_MAKE_FOURCC('U','Y','V','Y'), 16 },
-    { QVideoFrame::Format_YUYV,    GST_MAKE_FOURCC('Y','U','Y','2'), 16 },
-    { QVideoFrame::Format_NV12,    GST_MAKE_FOURCC('N','V','1','2'), 8 },
-    { QVideoFrame::Format_NV21,    GST_MAKE_FOURCC('N','V','2','1'), 8 },
-    { QVideoFrame::Format_AYUV444, GST_MAKE_FOURCC('A','Y','U','V'), 32 }
-};
-
-static int indexOfYuvColor(QVideoFrame::PixelFormat format)
-{
-    const int count = sizeof(qt_yuvColorLookup) / sizeof(YuvFormat);
-
-    for (int i = 0; i < count; ++i)
-        if (qt_yuvColorLookup[i].pixelFormat == format)
-            return i;
-
-    return -1;
-}
-
-static int indexOfYuvColor(guint32 fourcc)
-{
-    const int count = sizeof(qt_yuvColorLookup) / sizeof(YuvFormat);
-
-    for (int i = 0; i < count; ++i)
-        if (qt_yuvColorLookup[i].fourcc == fourcc)
-            return i;
-
-    return -1;
-}
-
-struct RgbFormat
-{
-    QVideoFrame::PixelFormat pixelFormat;
-    int bitsPerPixel;
-    int depth;
-    int endianness;
-    int red;
-    int green;
-    int blue;
-    int alpha;
-};
-
-static const RgbFormat qt_rgbColorLookup[] =
-{
-    { QVideoFrame::Format_RGB32 , 32, 24, 4321, 0x0000FF00, 0x00FF0000, int(0xFF000000), 0x00000000 },
-    { QVideoFrame::Format_RGB32 , 32, 24, 1234, 0x00FF0000, 0x0000FF00, 0x000000FF, 0x00000000 },
-    { QVideoFrame::Format_BGR32 , 32, 24, 4321, int(0xFF000000), 0x00FF0000, 0x0000FF00, 0x00000000 },
-    { QVideoFrame::Format_BGR32 , 32, 24, 1234, 0x000000FF, 0x0000FF00, 0x00FF0000, 0x00000000 },
-    { QVideoFrame::Format_ARGB32, 32, 24, 4321, 0x0000FF00, 0x00FF0000, int(0xFF000000), 0x000000FF },
-    { QVideoFrame::Format_ARGB32, 32, 24, 1234, 0x00FF0000, 0x0000FF00, 0x000000FF, int(0xFF000000) },
-    { QVideoFrame::Format_RGB24 , 24, 24, 4321, 0x00FF0000, 0x0000FF00, 0x000000FF, 0x00000000 },
-    { QVideoFrame::Format_BGR24 , 24, 24, 4321, 0x000000FF, 0x0000FF00, 0x00FF0000, 0x00000000 },
-    { QVideoFrame::Format_RGB565, 16, 16, 1234, 0x0000F800, 0x000007E0, 0x0000001F, 0x00000000 }
-};
-
-static int indexOfRgbColor(
-        int bits, int depth, int endianness, int red, int green, int blue, int alpha)
-{
-    const int count = sizeof(qt_rgbColorLookup) / sizeof(RgbFormat);
-
-    for (int i = 0; i < count; ++i) {
-        if (qt_rgbColorLookup[i].bitsPerPixel == bits
-            && qt_rgbColorLookup[i].depth == depth
-            && qt_rgbColorLookup[i].endianness == endianness
-            && qt_rgbColorLookup[i].red == red
-            && qt_rgbColorLookup[i].green == green
-            && qt_rgbColorLookup[i].blue == blue
-            && qt_rgbColorLookup[i].alpha == alpha) {
-            return i;
-        }
-    }
-    return -1;
 }
 
 static GstVideoSinkClass *sink_parent_class;
@@ -448,10 +382,15 @@ void QVideoSurfaceGstSink::class_init(gpointer g_class, gpointer class_data)
     base_sink_class->buffer_alloc = QVideoSurfaceGstSink::buffer_alloc;
     base_sink_class->start = QVideoSurfaceGstSink::start;
     base_sink_class->stop = QVideoSurfaceGstSink::stop;
-    // base_sink_class->unlock = QVideoSurfaceGstSink::unlock; // Not implemented.
-    base_sink_class->event = QVideoSurfaceGstSink::event;
+    base_sink_class->unlock = QVideoSurfaceGstSink::unlock;
+
+#if GST_CHECK_VERSION(0, 10, 25)
+    GstVideoSinkClass *video_sink_class = reinterpret_cast<GstVideoSinkClass *>(g_class);
+    video_sink_class->show_frame = QVideoSurfaceGstSink::show_frame;
+#else
     base_sink_class->preroll = QVideoSurfaceGstSink::preroll;
     base_sink_class->render = QVideoSurfaceGstSink::render;
+#endif
 
     GstElementClass *element_class = reinterpret_cast<GstElementClass *>(g_class);
     element_class->change_state = QVideoSurfaceGstSink::change_state;
@@ -511,20 +450,45 @@ void QVideoSurfaceGstSink::finalize(GObject *object)
     G_OBJECT_CLASS(sink_parent_class)->finalize(object);
 }
 
-GstStateChangeReturn QVideoSurfaceGstSink::change_state(
-        GstElement *element, GstStateChange transition)
+void QVideoSurfaceGstSink::handleShowPrerollChange(GObject *o, GParamSpec *p, gpointer d)
 {
-    Q_UNUSED(element);
+    Q_UNUSED(o);
+    Q_UNUSED(p);
+    QVideoSurfaceGstSink *sink = reinterpret_cast<QVideoSurfaceGstSink *>(d);
 
-    return GST_ELEMENT_CLASS(sink_parent_class)->change_state(
-            element, transition);
+    gboolean showPrerollFrame = true; // "show-preroll-frame" property is true by default
+    g_object_get(G_OBJECT(sink), "show-preroll-frame", &showPrerollFrame, NULL);
+
+    if (!showPrerollFrame) {
+        GstState state = GST_STATE_VOID_PENDING;
+        gst_element_get_state(GST_ELEMENT(sink), &state, NULL, GST_CLOCK_TIME_NONE);
+        // show-preroll-frame being set to 'false' while in GST_STATE_PAUSED means
+        // the QMediaPlayer was stopped from the paused state.
+        // We need to flush the current frame.
+        if (state == GST_STATE_PAUSED)
+            sink->delegate->flush();
+    }
+}
+
+GstStateChangeReturn QVideoSurfaceGstSink::change_state(GstElement *element, GstStateChange transition)
+{
+    QVideoSurfaceGstSink *sink = reinterpret_cast<QVideoSurfaceGstSink *>(element);
+
+    gboolean showPrerollFrame = true; // "show-preroll-frame" property is true by default
+    g_object_get(G_OBJECT(element), "show-preroll-frame", &showPrerollFrame, NULL);
+
+    // If show-preroll-frame is 'false' when transitioning from GST_STATE_PLAYING to
+    // GST_STATE_PAUSED, it means the QMediaPlayer was stopped.
+    // We need to flush the current frame.
+    if (transition == GST_STATE_CHANGE_PLAYING_TO_PAUSED && !showPrerollFrame)
+        sink->delegate->flush();
+
+    return GST_ELEMENT_CLASS(sink_parent_class)->change_state(element, transition);
 }
 
 GstCaps *QVideoSurfaceGstSink::get_caps(GstBaseSink *base)
 {
     VO_SINK(base);
-
-    GstCaps *caps = gst_caps_new_empty();
 
     // Find the supported pixel formats
     // with buffer pool specific formats listed first
@@ -533,6 +497,7 @@ GstCaps *QVideoSurfaceGstSink::get_caps(GstBaseSink *base)
     QList<QVideoFrame::PixelFormat> poolHandleFormats;
     sink->delegate->poolMutex()->lock();
     QGstBufferPoolInterface *pool = sink->delegate->pool();
+
     if (pool)
         poolHandleFormats = sink->delegate->supportedPixelFormats(pool->handleType());
     sink->delegate->poolMutex()->unlock();
@@ -543,47 +508,7 @@ GstCaps *QVideoSurfaceGstSink::get_caps(GstBaseSink *base)
             supportedFormats.append(format);
     }
 
-    foreach (QVideoFrame::PixelFormat format, supportedFormats) {
-        int index = indexOfYuvColor(format);
-
-        if (index != -1) {
-            gst_caps_append_structure(caps, gst_structure_new(
-                    "video/x-raw-yuv",
-                    "framerate", GST_TYPE_FRACTION_RANGE, 0, 1, INT_MAX, 1,
-                    "width"    , GST_TYPE_INT_RANGE, 1, INT_MAX,
-                    "height"   , GST_TYPE_INT_RANGE, 1, INT_MAX,
-                    "format"   , GST_TYPE_FOURCC, qt_yuvColorLookup[index].fourcc,
-                    NULL));
-            continue;
-        }
-
-        const int count = sizeof(qt_rgbColorLookup) / sizeof(RgbFormat);
-
-        for (int i = 0; i < count; ++i) {
-            if (qt_rgbColorLookup[i].pixelFormat == format) {
-                GstStructure *structure = gst_structure_new(
-                        "video/x-raw-rgb",
-                        "framerate" , GST_TYPE_FRACTION_RANGE, 0, 1, INT_MAX, 1,
-                        "width"     , GST_TYPE_INT_RANGE, 1, INT_MAX,
-                        "height"    , GST_TYPE_INT_RANGE, 1, INT_MAX,
-                        "bpp"       , G_TYPE_INT, qt_rgbColorLookup[i].bitsPerPixel,
-                        "depth"     , G_TYPE_INT, qt_rgbColorLookup[i].depth,
-                        "endianness", G_TYPE_INT, qt_rgbColorLookup[i].endianness,
-                        "red_mask"  , G_TYPE_INT, qt_rgbColorLookup[i].red,
-                        "green_mask", G_TYPE_INT, qt_rgbColorLookup[i].green,
-                        "blue_mask" , G_TYPE_INT, qt_rgbColorLookup[i].blue,
-                        NULL);
-
-                if (qt_rgbColorLookup[i].alpha != 0) {
-                    gst_structure_set(
-                            structure, "alpha_mask", G_TYPE_INT, qt_rgbColorLookup[i].alpha, NULL);
-                }
-                gst_caps_append_structure(caps, structure);
-            }
-        }
-    }
-
-    return caps;
+    return QGstUtils::capsForFormats(supportedFormats);
 }
 
 gboolean QVideoSurfaceGstSink::set_caps(GstBaseSink *base, GstCaps *caps)
@@ -605,7 +530,7 @@ gboolean QVideoSurfaceGstSink::set_caps(GstBaseSink *base, GstCaps *caps)
         QAbstractVideoBuffer::HandleType handleType =
                 pool ? pool->handleType() : QAbstractVideoBuffer::NoHandle;
 
-        QVideoSurfaceFormat format = formatForCaps(caps, &bytesPerLine, handleType);
+        QVideoSurfaceFormat format = QGstUtils::formatForCaps(caps, &bytesPerLine, handleType);
 
         if (sink->delegate->isActive()) {
             QVideoSurfaceFormat surfaceFormst = sink->delegate->surfaceFormat();
@@ -622,7 +547,7 @@ gboolean QVideoSurfaceGstSink::set_caps(GstBaseSink *base, GstCaps *caps)
         sink->lastRequestedCaps = 0;
 
 #ifdef DEBUG_VIDEO_SURFACE_SINK
-        qDebug() << "Staring video surface, format:";
+        qDebug() << "Starting video surface, format:";
         qDebug() << format;
         qDebug() << "bytesPerLine:" << bytesPerLine;
 #endif
@@ -634,108 +559,6 @@ gboolean QVideoSurfaceGstSink::set_caps(GstBaseSink *base, GstCaps *caps)
     }
 
     return FALSE;
-}
-
-QVideoSurfaceFormat QVideoSurfaceGstSink::formatForCaps(GstCaps *caps, int *bytesPerLine, QAbstractVideoBuffer::HandleType handleType)
-{
-    const GstStructure *structure = gst_caps_get_structure(caps, 0);
-
-    QVideoFrame::PixelFormat pixelFormat = QVideoFrame::Format_Invalid;
-    int bitsPerPixel = 0;
-
-    QSize size;
-    gst_structure_get_int(structure, "width", &size.rwidth());
-    gst_structure_get_int(structure, "height", &size.rheight());
-
-    if (qstrcmp(gst_structure_get_name(structure), "video/x-raw-yuv") == 0) {
-        guint32 fourcc = 0;
-        gst_structure_get_fourcc(structure, "format", &fourcc);
-
-        int index = indexOfYuvColor(fourcc);
-        if (index != -1) {
-            pixelFormat = qt_yuvColorLookup[index].pixelFormat;
-            bitsPerPixel = qt_yuvColorLookup[index].bitsPerPixel;
-        }
-    } else if (qstrcmp(gst_structure_get_name(structure), "video/x-raw-rgb") == 0) {
-        int depth = 0;
-        int endianness = 0;
-        int red = 0;
-        int green = 0;
-        int blue = 0;
-        int alpha = 0;
-
-        gst_structure_get_int(structure, "bpp", &bitsPerPixel);
-        gst_structure_get_int(structure, "depth", &depth);
-        gst_structure_get_int(structure, "endianness", &endianness);
-        gst_structure_get_int(structure, "red_mask", &red);
-        gst_structure_get_int(structure, "green_mask", &green);
-        gst_structure_get_int(structure, "blue_mask", &blue);
-        gst_structure_get_int(structure, "alpha_mask", &alpha);
-
-        int index = indexOfRgbColor(bitsPerPixel, depth, endianness, red, green, blue, alpha);
-
-        if (index != -1)
-            pixelFormat = qt_rgbColorLookup[index].pixelFormat;
-    }
-
-    if (pixelFormat != QVideoFrame::Format_Invalid) {
-        QVideoSurfaceFormat format(size, pixelFormat, handleType);
-
-        QPair<int, int> rate;
-        gst_structure_get_fraction(structure, "framerate", &rate.first, &rate.second);
-
-        if (rate.second)
-            format.setFrameRate(qreal(rate.first)/rate.second);
-
-        gint aspectNum = 0;
-        gint aspectDenum = 0;
-        if (gst_structure_get_fraction(
-                structure, "pixel-aspect-ratio", &aspectNum, &aspectDenum)) {
-            if (aspectDenum > 0)
-                format.setPixelAspectRatio(aspectNum, aspectDenum);
-        }
-
-        if (bytesPerLine)
-            *bytesPerLine = ((size.width() * bitsPerPixel / 8) + 3) & ~3;
-
-        return format;
-    }
-
-    return QVideoSurfaceFormat();
-}
-
-void QVideoSurfaceGstSink::setFrameTimeStamps(QVideoFrame *frame, GstBuffer *buffer)
-{
-    // GStreamer uses nanoseconds, Qt uses microseconds
-    qint64 startTime = GST_BUFFER_TIMESTAMP(buffer);
-    if (startTime >= 0) {
-        frame->setStartTime(startTime/G_GINT64_CONSTANT (1000));
-
-        qint64 duration = GST_BUFFER_DURATION(buffer);
-        if (duration >= 0)
-            frame->setEndTime((startTime + duration)/G_GINT64_CONSTANT (1000));
-    }
-}
-
-void QVideoSurfaceGstSink::handleShowPrerollChange(GObject *o, GParamSpec *p, gpointer d)
-{
-    Q_UNUSED(o);
-    Q_UNUSED(p);
-    QVideoSurfaceGstSink *sink = reinterpret_cast<QVideoSurfaceGstSink *>(d);
-
-    gboolean value = true; // "show-preroll-frame" property is true by default
-    g_object_get(G_OBJECT(sink), "show-preroll-frame", &value, NULL);
-
-    GstBuffer *buffer = sink->delegate->lastPrerolledBuffer();
-    // Render the stored prerolled buffer if requested.
-    // e.g. player is in stopped mode, then seek operation is requested,
-    // surface now stores a prerolled frame, but doesn't display it until
-    // "show-preroll-frame" property is set to "true"
-    // when switching to pause or playing state.
-    if (value && buffer) {
-        sink->delegate->render(buffer);
-        sink->delegate->setLastPrerolledBuffer(0);
-    }
 }
 
 GstFlowReturn QVideoSurfaceGstSink::buffer_alloc(
@@ -782,7 +605,7 @@ GstFlowReturn QVideoSurfaceGstSink::buffer_alloc(
 
     if (sink->delegate->isActive()) {
         //if format was changed, restart the surface
-        QVideoSurfaceFormat format = formatForCaps(intersection);
+        QVideoSurfaceFormat format = QGstUtils::formatForCaps(intersection);
         QVideoSurfaceFormat surfaceFormat = sink->delegate->surfaceFormat();
 
         if (format.pixelFormat() != surfaceFormat.pixelFormat() ||
@@ -800,7 +623,7 @@ GstFlowReturn QVideoSurfaceGstSink::buffer_alloc(
         QAbstractVideoBuffer::HandleType handleType =
                 pool ? pool->handleType() : QAbstractVideoBuffer::NoHandle;
 
-        QVideoSurfaceFormat format = formatForCaps(intersection, &bytesPerLine, handleType);
+        QVideoSurfaceFormat format = QGstUtils::formatForCaps(intersection, &bytesPerLine, handleType);
 
         if (!sink->delegate->start(format, bytesPerLine)) {
             qWarning() << "failed to start video surface";
@@ -814,7 +637,7 @@ GstFlowReturn QVideoSurfaceGstSink::buffer_alloc(
     QVideoSurfaceFormat surfaceFormat = sink->delegate->surfaceFormat();
 
     if (!pool->isFormatSupported(surfaceFormat)) {
-        //qDebug() << "sink doesn't support native pool format, skip custom buffers allocation";
+        qDebug() << "sink doesn't support native pool format, skip custom buffers allocation";
         return GST_FLOW_OK;
     }
 
@@ -838,7 +661,6 @@ GstFlowReturn QVideoSurfaceGstSink::buffer_alloc(
 gboolean QVideoSurfaceGstSink::start(GstBaseSink *base)
 {
     Q_UNUSED(base);
-
     return TRUE;
 }
 
@@ -852,43 +674,35 @@ gboolean QVideoSurfaceGstSink::stop(GstBaseSink *base)
 
 gboolean QVideoSurfaceGstSink::unlock(GstBaseSink *base)
 {
-    Q_UNUSED(base);
-
+    VO_SINK(base);
+    sink->delegate->unlock();
     return TRUE;
 }
 
-gboolean QVideoSurfaceGstSink::event(GstBaseSink *base, GstEvent *event)
+#if GST_CHECK_VERSION(0, 10, 25)
+GstFlowReturn QVideoSurfaceGstSink::show_frame(GstVideoSink *base, GstBuffer *buffer)
 {
-    // discard prerolled frame
-    if (event->type == GST_EVENT_FLUSH_START) {
-        VO_SINK(base);
-        sink->delegate->setLastPrerolledBuffer(0);
-    }
-
-    return TRUE;
+    VO_SINK(base);
+    return sink->delegate->render(buffer);
 }
-
+#else
 GstFlowReturn QVideoSurfaceGstSink::preroll(GstBaseSink *base, GstBuffer *buffer)
 {
     VO_SINK(base);
+    gboolean showPrerollFrame = true;
+    g_object_get(G_OBJECT(sink), "show-preroll-frame", &showPrerollFrame, NULL);
 
-    gboolean value = true; // "show-preroll-frame" property is true by default
-    g_object_get(G_OBJECT(base), "show-preroll-frame", &value, NULL);
-    if (value) {
-        sink->delegate->setLastPrerolledBuffer(0); // discard prerolled buffer
-        return sink->delegate->render(buffer); // display frame
-    }
+    if (showPrerollFrame)
+        return sink->delegate->render(buffer);
 
-    // otherwise keep a reference to the buffer to display it later
-    sink->delegate->setLastPrerolledBuffer(buffer);
     return GST_FLOW_OK;
 }
 
 GstFlowReturn QVideoSurfaceGstSink::render(GstBaseSink *base, GstBuffer *buffer)
 {
     VO_SINK(base);
-    sink->delegate->setLastPrerolledBuffer(0); // discard prerolled buffer
     return sink->delegate->render(buffer);
 }
+#endif
 
 QT_END_NAMESPACE

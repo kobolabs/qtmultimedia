@@ -1,39 +1,31 @@
 /****************************************************************************
 **
-** Copyright (C) 2013 Digia Plc and/or its subsidiary(-ies).
-** Contact: http://www.qt-project.org/legal
+** Copyright (C) 2015 The Qt Company Ltd.
+** Contact: http://www.qt.io/licensing/
 **
 ** This file is part of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL$
+** $QT_BEGIN_LICENSE:LGPL21$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and Digia.  For licensing terms and
-** conditions see http://qt.digia.com/licensing.  For further information
-** use the contact form at http://qt.digia.com/contact-us.
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see http://www.qt.io/terms-conditions. For further
+** information use the contact form at http://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU Lesser General Public License version 2.1 requirements
-** will be met: http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 2.1 or version 3 as published by the Free
+** Software Foundation and appearing in the file LICENSE.LGPLv21 and
+** LICENSE.LGPLv3 included in the packaging of this file. Please review the
+** following information to ensure the GNU Lesser General Public License
+** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
+** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
 **
-** In addition, as a special exception, Digia gives you certain additional
-** rights.  These rights are described in the Digia Qt LGPL Exception
+** As a special exception, The Qt Company gives you certain additional
+** rights. These rights are described in The Qt Company LGPL Exception
 ** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3.0 as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU General Public License version 3.0 requirements will be
-** met: http://www.gnu.org/copyleft/gpl.html.
-**
 **
 ** $QT_END_LICENSE$
 **
@@ -52,6 +44,8 @@
 #include <qmediaservice.h>
 #include <qmediaplayer.h>
 #include <qaudiorecorder.h>
+#include <qcamera.h>
+#include <qcamerainfo.h>
 
 QT_USE_NAMESPACE
 
@@ -83,6 +77,9 @@ private slots:
     void testHasSupport();
     void testSupportedMimeTypes();
     void testProviderHints();
+    void testDefaultDevice();
+    void testAvailableDevices();
+    void testCameraInfo();
 
 private:
     QObjectList plugins;
@@ -96,7 +93,7 @@ void tst_QMediaServiceProvider::initTestCase()
 
 void tst_QMediaServiceProvider::testDefaultProviderAvailable()
 {
-    // Must always be a default provider available    
+    // Must always be a default provider available
     QVERIFY(QMediaServiceProvider::defaultServiceProvider() != 0);
 }
 
@@ -195,6 +192,7 @@ void tst_QMediaServiceProvider::testProviderHints()
         QVERIFY(hint.isNull());
         QCOMPARE(hint.type(), QMediaServiceProviderHint::Null);
         QVERIFY(hint.device().isEmpty());
+        QCOMPARE(hint.cameraPosition(), QCamera::UnspecifiedPosition);
         QVERIFY(hint.mimeType().isEmpty());
         QVERIFY(hint.codecs().isEmpty());
         QCOMPARE(hint.features(), 0);
@@ -206,6 +204,18 @@ void tst_QMediaServiceProvider::testProviderHints()
         QVERIFY(!hint.isNull());
         QCOMPARE(hint.type(), QMediaServiceProviderHint::Device);
         QCOMPARE(hint.device(), deviceName);
+        QCOMPARE(hint.cameraPosition(), QCamera::UnspecifiedPosition);
+        QVERIFY(hint.mimeType().isEmpty());
+        QVERIFY(hint.codecs().isEmpty());
+        QCOMPARE(hint.features(), 0);
+    }
+
+    {
+        QMediaServiceProviderHint hint(QCamera::FrontFace);
+        QVERIFY(!hint.isNull());
+        QCOMPARE(hint.type(), QMediaServiceProviderHint::CameraPosition);
+        QVERIFY(hint.device().isEmpty());
+        QCOMPARE(hint.cameraPosition(), QCamera::FrontFace);
         QVERIFY(hint.mimeType().isEmpty());
         QVERIFY(hint.codecs().isEmpty());
         QCOMPARE(hint.features(), 0);
@@ -216,6 +226,7 @@ void tst_QMediaServiceProvider::testProviderHints()
         QVERIFY(!hint.isNull());
         QCOMPARE(hint.type(), QMediaServiceProviderHint::SupportedFeatures);
         QVERIFY(hint.device().isEmpty());
+        QCOMPARE(hint.cameraPosition(), QCamera::UnspecifiedPosition);
         QVERIFY(hint.mimeType().isEmpty());
         QVERIFY(hint.codecs().isEmpty());
         QCOMPARE(hint.features(), QMediaServiceProviderHint::LowLatencyPlayback);
@@ -226,6 +237,7 @@ void tst_QMediaServiceProvider::testProviderHints()
         QVERIFY(!hint.isNull());
         QCOMPARE(hint.type(), QMediaServiceProviderHint::SupportedFeatures);
         QVERIFY(hint.device().isEmpty());
+        QCOMPARE(hint.cameraPosition(), QCamera::UnspecifiedPosition);
         QVERIFY(hint.mimeType().isEmpty());
         QVERIFY(hint.codecs().isEmpty());
         QCOMPARE(hint.features(), QMediaServiceProviderHint::RecordingSupport);
@@ -240,6 +252,7 @@ void tst_QMediaServiceProvider::testProviderHints()
         QVERIFY(!hint.isNull());
         QCOMPARE(hint.type(), QMediaServiceProviderHint::ContentType);
         QVERIFY(hint.device().isEmpty());
+        QCOMPARE(hint.cameraPosition(), QCamera::UnspecifiedPosition);
         QCOMPARE(hint.mimeType(), mimeType);
         QCOMPARE(hint.codecs(), codecs);
 
@@ -248,6 +261,7 @@ void tst_QMediaServiceProvider::testProviderHints()
         QVERIFY(!hint2.isNull());
         QCOMPARE(hint2.type(), QMediaServiceProviderHint::ContentType);
         QVERIFY(hint2.device().isEmpty());
+        QCOMPARE(hint.cameraPosition(), QCamera::UnspecifiedPosition);
         QCOMPARE(hint2.mimeType(), mimeType);
         QCOMPARE(hint2.codecs(), codecs);
 
@@ -257,6 +271,7 @@ void tst_QMediaServiceProvider::testProviderHints()
         QVERIFY(!hint3.isNull());
         QCOMPARE(hint3.type(), QMediaServiceProviderHint::ContentType);
         QVERIFY(hint3.device().isEmpty());
+        QCOMPARE(hint.cameraPosition(), QCamera::UnspecifiedPosition);
         QCOMPARE(hint3.mimeType(), mimeType);
         QCOMPARE(hint3.codecs(), codecs);
 
@@ -268,6 +283,99 @@ void tst_QMediaServiceProvider::testProviderHints()
 
         QMediaServiceProviderHint hint5(mimeType,QStringList());
         QVERIFY(hint != hint5);
+    }
+}
+
+void tst_QMediaServiceProvider::testDefaultDevice()
+{
+    QMediaServiceProvider *provider = QMediaServiceProvider::defaultServiceProvider();
+
+    if (provider == 0)
+        QSKIP("No default provider");
+
+    QCOMPARE(provider->defaultDevice(Q_MEDIASERVICE_AUDIOSOURCE), QByteArray("audiosource1"));
+    QCOMPARE(provider->defaultDevice(Q_MEDIASERVICE_CAMERA), QByteArray("frontcamera"));
+}
+
+void tst_QMediaServiceProvider::testAvailableDevices()
+{
+    QMediaServiceProvider *provider = QMediaServiceProvider::defaultServiceProvider();
+
+    if (provider == 0)
+        QSKIP("No default provider");
+
+    QList<QByteArray> devices = provider->devices(Q_MEDIASERVICE_AUDIOSOURCE);
+    QCOMPARE(devices.count(), 2);
+    QCOMPARE(devices.at(0), QByteArray("audiosource1"));
+    QCOMPARE(devices.at(1), QByteArray("audiosource2"));
+
+    devices = provider->devices(Q_MEDIASERVICE_CAMERA);
+    QCOMPARE(devices.count(), 3);
+    QCOMPARE(devices.at(0), QByteArray("frontcamera"));
+    QCOMPARE(devices.at(1), QByteArray("backcamera"));
+    QCOMPARE(devices.at(2), QByteArray("somecamera"));
+}
+
+void tst_QMediaServiceProvider::testCameraInfo()
+{
+    QMediaServiceProvider *provider = QMediaServiceProvider::defaultServiceProvider();
+
+    if (provider == 0)
+        QSKIP("No default provider");
+
+    QCOMPARE(provider->cameraPosition("backcamera"), QCamera::BackFace);
+    QCOMPARE(provider->cameraOrientation("backcamera"), 90);
+    QCOMPARE(provider->cameraPosition("frontcamera"), QCamera::FrontFace);
+    QCOMPARE(provider->cameraOrientation("frontcamera"), 270);
+    QCOMPARE(provider->cameraPosition("somecamera"), QCamera::UnspecifiedPosition);
+    QCOMPARE(provider->cameraOrientation("somecamera"), 0);
+
+    {
+        QCamera camera;
+        QVERIFY(camera.service());
+        QCOMPARE(camera.service()->objectName(), QLatin1String("MockServicePlugin3"));
+    }
+
+    {
+        QCamera camera(QCameraInfo::defaultCamera());
+        QVERIFY(camera.service());
+        QCOMPARE(camera.service()->objectName(), QLatin1String("MockServicePlugin3"));
+    }
+
+    {
+        QCamera camera(QCameraInfo::availableCameras().at(0));
+        QVERIFY(camera.service());
+        QCOMPARE(camera.service()->objectName(), QLatin1String("MockServicePlugin3"));
+    }
+
+    {
+        QCamera camera(QCameraInfo::availableCameras().at(1));
+        QVERIFY(camera.service());
+        QCOMPARE(camera.service()->objectName(), QLatin1String("MockServicePlugin5"));
+    }
+
+    {
+        QCamera camera(QCameraInfo::availableCameras().at(2));
+        QVERIFY(camera.service());
+        QCOMPARE(camera.service()->objectName(), QLatin1String("MockServicePlugin5"));
+    }
+
+    {
+        QCamera camera(QCamera::FrontFace);
+        QVERIFY(camera.service());
+        QCOMPARE(camera.service()->objectName(), QLatin1String("MockServicePlugin3"));
+    }
+
+    {
+        QCamera camera(QCamera::BackFace);
+        QVERIFY(camera.service());
+        QCOMPARE(camera.service()->objectName(), QLatin1String("MockServicePlugin5"));
+    }
+
+    {
+        QCamera camera(QCamera::UnspecifiedPosition);
+        QVERIFY(camera.service());
+        QCOMPARE(camera.service()->objectName(), QLatin1String("MockServicePlugin3"));
     }
 }
 

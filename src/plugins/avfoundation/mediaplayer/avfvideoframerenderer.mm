@@ -1,39 +1,31 @@
 /****************************************************************************
 **
-** Copyright (C) 2013 Digia Plc and/or its subsidiary(-ies).
-** Contact: http://www.qt-project.org/legal
+** Copyright (C) 2015 The Qt Company Ltd and/or its subsidiary(-ies).
+** Contact: http://www.qt.io/licensing/
 **
 ** This file is part of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL$
+** $QT_BEGIN_LICENSE:LGPL21$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and Digia.  For licensing terms and
-** conditions see http://qt.digia.com/licensing.  For further information
-** use the contact form at http://qt.digia.com/contact-us.
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see http://www.qt.io/terms-conditions. For further
+** information use the contact form at http://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU Lesser General Public License version 2.1 requirements
-** will be met: http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 2.1 or version 3 as published by the Free
+** Software Foundation and appearing in the file LICENSE.LGPLv21 and
+** LICENSE.LGPLv3 included in the packaging of this file. Please review the
+** following information to ensure the GNU Lesser General Public License
+** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
+** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
 **
-** In addition, as a special exception, Digia gives you certain additional
-** rights.  These rights are described in the Digia Qt LGPL Exception
+** As a special exception, The Qt Company gives you certain additional
+** rights. These rights are described in The Qt Company LGPL Exception
 ** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3.0 as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU General Public License version 3.0 requirements will be
-** met: http://www.gnu.org/copyleft/gpl.html.
-**
 **
 ** $QT_END_LICENSE$
 **
@@ -58,19 +50,13 @@ AVFVideoFrameRenderer::AVFVideoFrameRenderer(QAbstractVideoSurface *surface, QOb
     : QObject(parent)
     , m_videoLayerRenderer(0)
     , m_surface(surface)
+    , m_offscreenSurface(0)
     , m_glContext(0)
     , m_currentBuffer(1)
     , m_isContextShared(true)
 {
     m_fbo[0] = 0;
     m_fbo[1] = 0;
-
-    //Create Hidden QWindow surface to create context in this thread
-    m_offscreenSurface = new QWindow();
-    m_offscreenSurface->setSurfaceType(QWindow::OpenGLSurface);
-    //Needs geometry to be a valid surface, but size is not important
-    m_offscreenSurface->setGeometry(0, 0, 1, 1);
-    m_offscreenSurface->create();
 }
 
 AVFVideoFrameRenderer::~AVFVideoFrameRenderer()
@@ -102,7 +88,8 @@ GLuint AVFVideoFrameRenderer::renderLayerToTexture(AVPlayerLayer *layer)
         return 0;
 
     renderLayerToFBO(layer, fbo);
-    m_glContext->doneCurrent();
+    if (m_glContext)
+        m_glContext->doneCurrent();
 
     return fbo->texture();
 }
@@ -120,8 +107,9 @@ QImage AVFVideoFrameRenderer::renderLayerToImage(AVPlayerLayer *layer)
         return QImage();
 
     renderLayerToFBO(layer, fbo);
-    QImage fboImage = fbo->toImage().mirrored();
-    m_glContext->doneCurrent();
+    QImage fboImage = fbo->toImage();
+    if (m_glContext)
+        m_glContext->doneCurrent();
 
     return fboImage;
 }
@@ -133,7 +121,14 @@ QOpenGLFramebufferObject *AVFVideoFrameRenderer::initRenderer(AVPlayerLayer *lay
     m_targetSize = QSize(layer.bounds.size.width, layer.bounds.size.height);
 
     //Make sure we have an OpenGL context to make current
-    if (!m_glContext) {
+    if (!QOpenGLContext::currentContext() && !m_glContext) {
+        //Create Hidden QWindow surface to create context in this thread
+        m_offscreenSurface = new QWindow();
+        m_offscreenSurface->setSurfaceType(QWindow::OpenGLSurface);
+        //Needs geometry to be a valid surface, but size is not important
+        m_offscreenSurface->setGeometry(0, 0, 1, 1);
+        m_offscreenSurface->create();
+
         //Create OpenGL context and set share context from surface
         QOpenGLContext *shareContext = 0;
         if (m_surface) {
@@ -159,7 +154,8 @@ QOpenGLFramebufferObject *AVFVideoFrameRenderer::initRenderer(AVPlayerLayer *lay
     }
 
     //Need current context
-    m_glContext->makeCurrent(m_offscreenSurface);
+    if (m_glContext)
+        m_glContext->makeCurrent(m_offscreenSurface);
 
     //Create the CARenderer if needed
     if (!m_videoLayerRenderer) {
@@ -204,7 +200,8 @@ void AVFVideoFrameRenderer::renderLayerToFBO(AVPlayerLayer *layer, QOpenGLFrameb
     glPushMatrix();
     glLoadIdentity();
 
-    glOrtho(0.0f, m_targetSize.width(), m_targetSize.height(), 0.0f, 0.0f, 1.0f);
+    //Render to FBO with inverted Y
+    glOrtho(0.0, m_targetSize.width(), 0.0, m_targetSize.height(), 0.0, 1.0);
 
     glMatrixMode(GL_MODELVIEW);
     glPushMatrix();

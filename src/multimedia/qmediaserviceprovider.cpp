@@ -1,39 +1,31 @@
 /****************************************************************************
 **
-** Copyright (C) 2013 Digia Plc and/or its subsidiary(-ies).
-** Contact: http://www.qt-project.org/legal
+** Copyright (C) 2015 The Qt Company Ltd.
+** Contact: http://www.qt.io/licensing/
 **
 ** This file is part of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL$
+** $QT_BEGIN_LICENSE:LGPL21$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and Digia.  For licensing terms and
-** conditions see http://qt.digia.com/licensing.  For further information
-** use the contact form at http://qt.digia.com/contact-us.
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see http://www.qt.io/terms-conditions. For further
+** information use the contact form at http://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU Lesser General Public License version 2.1 requirements
-** will be met: http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 2.1 or version 3 as published by the Free
+** Software Foundation and appearing in the file LICENSE.LGPLv21 and
+** LICENSE.LGPLv3 included in the packaging of this file. Please review the
+** following information to ensure the GNU Lesser General Public License
+** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
+** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
 **
-** In addition, as a special exception, Digia gives you certain additional
-** rights.  These rights are described in the Digia Qt LGPL Exception
+** As a special exception, The Qt Company gives you certain additional
+** rights. These rights are described in The Qt Company LGPL Exception
 ** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3.0 as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU General Public License version 3.0 requirements will be
-** met: http://www.gnu.org/copyleft/gpl.html.
-**
 **
 ** $QT_END_LICENSE$
 **
@@ -58,7 +50,7 @@ class QMediaServiceProviderHintPrivate : public QSharedData
 {
 public:
     QMediaServiceProviderHintPrivate(QMediaServiceProviderHint::Type type)
-        :type(type), features(0)
+        :type(type), cameraPosition(QCamera::UnspecifiedPosition), features(0)
     {
     }
 
@@ -66,6 +58,7 @@ public:
         :QSharedData(other),
         type(other.type),
         device(other.device),
+        cameraPosition(other.cameraPosition),
         mimeType(other.mimeType),
         codecs(other.codecs),
         features(other.features)
@@ -78,6 +71,7 @@ public:
 
     QMediaServiceProviderHint::Type type;
     QByteArray device;
+    QCamera::Position cameraPosition;
     QString mimeType;
     QStringList codecs;
     QMediaServiceProviderHint::Features features;
@@ -129,6 +123,7 @@ public:
     \value ContentType        Select media service most suitable for certain content type.
     \value Device             Select media service which supports certain device.
     \value SupportedFeatures  Select media service supporting the set of optional features.
+    \value CameraPosition     Select media service having a camera at a specified position.
 */
 
 
@@ -162,6 +157,19 @@ QMediaServiceProviderHint::QMediaServiceProviderHint(const QByteArray &device)
     :d(new QMediaServiceProviderHintPrivate(Device))
 {
     d->device = device;
+}
+
+/*!
+  \since 5.3
+
+  Constructs a CameraPosition media service provider hint.
+
+  This type of hint describes a media service that has a camera in the specific \a position.
+*/
+QMediaServiceProviderHint::QMediaServiceProviderHint(QCamera::Position position)
+    :d(new QMediaServiceProviderHintPrivate(CameraPosition))
+{
+    d->cameraPosition = position;
 }
 
 /*!
@@ -209,6 +217,7 @@ bool QMediaServiceProviderHint::operator == (const QMediaServiceProviderHint &ot
     return (d == other.d) ||
            (d->type == other.d->type &&
             d->device == other.d->device &&
+            d->cameraPosition == other.d->cameraPosition &&
             d->mimeType == other.d->mimeType &&
             d->codecs == other.d->codecs &&
             d->features == other.d->features);
@@ -265,6 +274,17 @@ QByteArray QMediaServiceProviderHint::device() const
 }
 
 /*!
+    \since 5.3
+
+    Returns the camera's position a media service is expected to utilize.
+*/
+QCamera::Position QMediaServiceProviderHint::cameraPosition() const
+{
+    return d->cameraPosition;
+}
+
+
+/*!
     Returns a set of features a media service is expected to provide.
 */
 QMediaServiceProviderHint::Features QMediaServiceProviderHint::features() const
@@ -279,7 +299,14 @@ Q_GLOBAL_STATIC_WITH_ARGS(QMediaPluginLoader, loader,
 
 class QPluginServiceProvider : public QMediaServiceProvider
 {
-    QMap<QMediaService*, QMediaServiceProviderPlugin*> pluginMap;
+    struct MediaServiceData {
+        QByteArray type;
+        QMediaServiceProviderPlugin *plugin;
+
+        MediaServiceData() : plugin(0) { }
+    };
+
+    QMap<const QMediaService*, MediaServiceData> mediaServiceData;
 
 public:
     QMediaService* requestService(const QByteArray &type, const QMediaServiceProviderHint &hint)
@@ -332,18 +359,36 @@ public:
                 }
                 break;
             case QMediaServiceProviderHint::Device: {
+                    plugin = plugins[0];
                     foreach (QMediaServiceProviderPlugin *currentPlugin, plugins) {
                         QMediaServiceSupportedDevicesInterface *iface =
                                 qobject_cast<QMediaServiceSupportedDevicesInterface*>(currentPlugin);
 
-                        if (!iface) {
-                            // the plugin may support the device,
-                            // but this choice still can be overridden
+                        if (iface && iface->devices(type).contains(hint.device())) {
                             plugin = currentPlugin;
-                        } else {
-                            if (iface->devices(type).contains(hint.device())) {
-                                plugin = currentPlugin;
-                                break;
+                            break;
+                        }
+                    }
+                }
+                break;
+            case QMediaServiceProviderHint::CameraPosition: {
+                    plugin = plugins[0];
+                    if (type == QByteArray(Q_MEDIASERVICE_CAMERA)
+                            && hint.cameraPosition() != QCamera::UnspecifiedPosition) {
+                        foreach (QMediaServiceProviderPlugin *currentPlugin, plugins) {
+                            const QMediaServiceSupportedDevicesInterface *deviceIface =
+                                    qobject_cast<QMediaServiceSupportedDevicesInterface*>(currentPlugin);
+                            const QMediaServiceCameraInfoInterface *cameraIface =
+                                    qobject_cast<QMediaServiceCameraInfoInterface*>(currentPlugin);
+
+                            if (deviceIface && cameraIface) {
+                                const QList<QByteArray> cameras = deviceIface->devices(type);
+                                foreach (const QByteArray &camera, cameras) {
+                                    if (cameraIface->cameraPosition(camera) == hint.cameraPosition()) {
+                                        plugin = currentPlugin;
+                                        break;
+                                    }
+                                }
                             }
                         }
                     }
@@ -373,8 +418,12 @@ public:
 
             if (plugin != 0) {
                 QMediaService *service = plugin->create(key);
-                if (service != 0)
-                    pluginMap.insert(service, plugin);
+                if (service != 0) {
+                    MediaServiceData d;
+                    d.type = type;
+                    d.plugin = plugin;
+                    mediaServiceData.insert(service, d);
+                }
 
                 return service;
             }
@@ -387,11 +436,28 @@ public:
     void releaseService(QMediaService *service)
     {
         if (service != 0) {
-            QMediaServiceProviderPlugin *plugin = pluginMap.take(service);
+            MediaServiceData d = mediaServiceData.take(service);
 
-            if (plugin != 0)
-                plugin->release(service);
+            if (d.plugin != 0)
+                d.plugin->release(service);
         }
+    }
+
+    QMediaServiceProviderHint::Features supportedFeatures(const QMediaService *service) const
+    {
+        if (service) {
+            MediaServiceData d = mediaServiceData.value(service);
+
+            if (d.plugin) {
+                QMediaServiceFeaturesInterface *iface =
+                        qobject_cast<QMediaServiceFeaturesInterface*>(d.plugin);
+
+                if (iface)
+                    return iface->supportedFeatures(d.type);
+            }
+        }
+
+        return QMediaServiceProviderHint::Features();
     }
 
     QMultimedia::SupportEstimate hasSupport(const QByteArray &serviceType,
@@ -496,6 +562,25 @@ public:
         return supportedTypes;
     }
 
+    QByteArray defaultDevice(const QByteArray &serviceType) const
+    {
+        foreach (QObject *obj, loader()->instances(QLatin1String(serviceType))) {
+            const QMediaServiceDefaultDeviceInterface *iface =
+                    qobject_cast<QMediaServiceDefaultDeviceInterface*>(obj);
+
+            if (iface)
+                return iface->defaultDevice(serviceType);
+        }
+
+        // if QMediaServiceDefaultDeviceInterface is not implemented, return the
+        // first available device.
+        QList<QByteArray> devs = devices(serviceType);
+        if (!devs.isEmpty())
+            return devs.first();
+
+        return QByteArray();
+    }
+
     QList<QByteArray> devices(const QByteArray &serviceType) const
     {
         QList<QByteArray> res;
@@ -525,6 +610,44 @@ public:
         }
 
         return QString();
+    }
+
+    QCamera::Position cameraPosition(const QByteArray &device) const
+    {
+        const QByteArray serviceType(Q_MEDIASERVICE_CAMERA);
+        foreach (QObject *obj, loader()->instances(QString::fromLatin1(serviceType))) {
+            const QMediaServiceSupportedDevicesInterface *deviceIface =
+                    qobject_cast<QMediaServiceSupportedDevicesInterface*>(obj);
+            const QMediaServiceCameraInfoInterface *cameraIface =
+                    qobject_cast<QMediaServiceCameraInfoInterface*>(obj);
+
+            if (cameraIface) {
+                if (deviceIface && !deviceIface->devices(serviceType).contains(device))
+                    continue;
+                return cameraIface->cameraPosition(device);
+            }
+        }
+
+        return QCamera::UnspecifiedPosition;
+    }
+
+    int cameraOrientation(const QByteArray &device) const
+    {
+        const QByteArray serviceType(Q_MEDIASERVICE_CAMERA);
+        foreach (QObject *obj, loader()->instances(QString::fromLatin1(serviceType))) {
+            const QMediaServiceSupportedDevicesInterface *deviceIface =
+                    qobject_cast<QMediaServiceSupportedDevicesInterface*>(obj);
+            const QMediaServiceCameraInfoInterface *cameraIface =
+                    qobject_cast<QMediaServiceCameraInfoInterface*>(obj);
+
+            if (cameraIface) {
+                if (deviceIface && !deviceIface->devices(serviceType).contains(device))
+                    continue;
+                return cameraIface->cameraOrientation(device);
+            }
+        }
+
+        return 0;
     }
 };
 
@@ -559,6 +682,18 @@ Q_GLOBAL_STATIC(QPluginServiceProvider, pluginProvider);
 
     Releases a media \a service requested with requestService().
 */
+
+/*!
+    \fn QMediaServiceProvider::supportedFeatures(const QMediaService *service) const
+
+    Returns the features supported by a given \a service.
+*/
+QMediaServiceProviderHint::Features QMediaServiceProvider::supportedFeatures(const QMediaService *service) const
+{
+    Q_UNUSED(service);
+
+    return QMediaServiceProviderHint::Features(0);
+}
 
 /*!
     \fn QMultimedia::SupportEstimate QMediaServiceProvider::hasSupport(const QByteArray &serviceType, const QString &mimeType, const QStringList& codecs, int flags) const
@@ -599,6 +734,17 @@ QStringList QMediaServiceProvider::supportedMimeTypes(const QByteArray &serviceT
 }
 
 /*!
+  \since 5.3
+
+  Returns the default device for a \a service type.
+*/
+QByteArray QMediaServiceProvider::defaultDevice(const QByteArray &serviceType) const
+{
+    Q_UNUSED(serviceType);
+    return QByteArray();
+}
+
+/*!
   Returns the list of devices related to \a service type.
 */
 QList<QByteArray> QMediaServiceProvider::devices(const QByteArray &service) const
@@ -616,6 +762,30 @@ QString QMediaServiceProvider::deviceDescription(const QByteArray &serviceType, 
     Q_UNUSED(serviceType);
     Q_UNUSED(device);
     return QString();
+}
+
+/*!
+    \since 5.3
+
+    Returns the physical position of a camera \a device on the system hardware.
+*/
+QCamera::Position QMediaServiceProvider::cameraPosition(const QByteArray &device) const
+{
+    Q_UNUSED(device);
+    return QCamera::UnspecifiedPosition;
+}
+
+/*!
+    \since 5.3
+
+    Returns the physical orientation of the camera \a device. The value is the angle by which the
+    camera image should be rotated anti-clockwise (in steps of 90 degrees) so it shows correctly on
+    the display in its natural orientation.
+*/
+int QMediaServiceProvider::cameraOrientation(const QByteArray &device) const
+{
+    Q_UNUSED(device);
+    return 0;
 }
 
 static QMediaServiceProvider *qt_defaultMediaServiceProvider = 0;
@@ -713,15 +883,67 @@ QMediaServiceProvider *QMediaServiceProvider::defaultServiceProvider()
 */
 
 /*!
-    \fn QMediaServiceSupportedDevicesInterface::devices(const QByteArray &service) const
+    \fn QList<QByteArray> QMediaServiceSupportedDevicesInterface::devices(const QByteArray &service) const
 
-    Returns a list of devices supported by a plug-in \a service.
+    Returns a list of devices available for a \a service type.
 */
 
 /*!
-    \fn QMediaServiceSupportedDevicesInterface::deviceDescription(const QByteArray &service, const QByteArray &device)
+    \fn QString QMediaServiceSupportedDevicesInterface::deviceDescription(const QByteArray &service, const QByteArray &device)
 
-    Returns a description of a \a device supported by a plug-in \a service.
+    Returns the description of a \a device available for a \a service type.
+*/
+
+/*!
+    \class QMediaServiceDefaultDeviceInterface
+    \inmodule QtMultimedia
+    \brief The QMediaServiceDefaultDeviceInterface class interface
+    identifies the default device used by a media service plug-in.
+
+    A QMediaServiceProviderPlugin may implement this interface.
+
+    \since 5.3
+*/
+
+/*!
+    \fn QMediaServiceDefaultDeviceInterface::~QMediaServiceDefaultDeviceInterface()
+
+    Destroys a media service default device interface.
+*/
+
+/*!
+    \fn QByteArray QMediaServiceDefaultDeviceInterface::defaultDevice(const QByteArray &service) const
+
+    Returns the default device for a \a service type.
+*/
+
+/*!
+    \class QMediaServiceCameraInfoInterface
+    \inmodule QtMultimedia
+    \since 5.3
+    \brief The QMediaServiceCameraInfoInterface class interface
+    provides camera-specific information about devices supported by a camera service plug-in.
+
+    A QMediaServiceProviderPlugin may implement this interface, in that case it also needs to
+    implement the QMediaServiceSupportedDevicesInterface.
+*/
+
+/*!
+    \fn QMediaServiceCameraInfoInterface::~QMediaServiceCameraInfoInterface()
+
+    Destroys a media service camera info interface.
+*/
+
+/*!
+    \fn QMediaServiceCameraInfoInterface::cameraPosition(const QByteArray &device) const
+
+    Returns the physical position of a camera \a device supported by a camera service plug-in.
+*/
+
+/*!
+    \fn QMediaServiceCameraInfoInterface::cameraOrientation(const QByteArray &device) const
+
+    Returns the physical orientation of a camera \a device supported by a camera service plug-in.
 */
 
 /*!

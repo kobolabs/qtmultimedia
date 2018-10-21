@@ -1,7 +1,7 @@
 /****************************************************************************
 **
-** Copyright (C) 2013 Digia Plc and/or its subsidiary(-ies).
-** Contact: http://www.qt-project.org/legal
+** Copyright (C) 2015 The Qt Company Ltd.
+** Contact: http://www.qt.io/licensing/
 **
 ** This file is part of the examples of the Qt Toolkit.
 **
@@ -17,8 +17,8 @@
 **     notice, this list of conditions and the following disclaimer in
 **     the documentation and/or other materials provided with the
 **     distribution.
-**   * Neither the name of Digia Plc and its Subsidiary(-ies) nor the names
-**     of its contributors may be used to endorse or promote products derived
+**   * Neither the name of The Qt Company Ltd nor the names of its
+**     contributors may be used to endorse or promote products derived
 **     from this software without specific prior written permission.
 **
 **
@@ -95,7 +95,7 @@ Player::Player(QWidget *parent)
 
     labelDuration = new QLabel(this);
     connect(slider, SIGNAL(sliderMoved(int)), this, SLOT(seek(int)));
-    
+
     labelHistogram = new QLabel(this);
     labelHistogram->setText("Histogram:");
     histogram = new HistogramWidget(this);
@@ -104,7 +104,7 @@ Player::Player(QWidget *parent)
     histogramLayout->addWidget(histogram, 1);
 
     probe = new QVideoProbe(this);
-    connect(probe, SIGNAL(videoFrameProbed(const QVideoFrame&)), histogram, SLOT(processFrame(QVideoFrame)));
+    connect(probe, SIGNAL(videoFrameProbed(QVideoFrame)), histogram, SLOT(processFrame(QVideoFrame)));
     probe->setSource(player);
 
     QPushButton *openButton = new QPushButton(tr("Open"), this);
@@ -167,7 +167,7 @@ Player::Player(QWidget *parent)
 
     setLayout(layout);
 
-    if (!player->isAvailable()) {
+    if (!isPlayerAvailable()) {
         QMessageBox::warning(this, tr("Service not available"),
                              tr("The QMediaPlayer object does not have a valid service.\n"\
                                 "Please check the media service plugins are installed."));
@@ -182,38 +182,47 @@ Player::Player(QWidget *parent)
     }
 
     metaDataChanged();
-
-    QStringList arguments = qApp->arguments();
-    arguments.removeAt(0);
-    addToPlaylist(arguments);
 }
 
 Player::~Player()
 {
 }
 
-void Player::open()
+bool Player::isPlayerAvailable() const
 {
-    QStringList fileNames = QFileDialog::getOpenFileNames(this, tr("Open Files"));
-    addToPlaylist(fileNames);
+    return player->isAvailable();
 }
 
-void Player::addToPlaylist(const QStringList& fileNames)
+void Player::open()
 {
-    foreach (QString const &argument, fileNames) {
-        QFileInfo fileInfo(argument);
-        if (fileInfo.exists()) {
-            QUrl url = QUrl::fromLocalFile(fileInfo.absoluteFilePath());
-            if (fileInfo.suffix().toLower() == QLatin1String("m3u")) {
-                playlist->load(url);
-            } else
-                playlist->addMedia(url);
-        } else {
-            QUrl url(argument);
-            if (url.isValid()) {
-                playlist->addMedia(url);
-            }
-        }
+    QFileDialog fileDialog(this);
+    fileDialog.setAcceptMode(QFileDialog::AcceptOpen);
+    fileDialog.setWindowTitle(tr("Open Files"));
+    QStringList supportedMimeTypes = player->supportedMimeTypes();
+    if (!supportedMimeTypes.isEmpty()) {
+        supportedMimeTypes.append("audio/x-m3u"); // MP3 playlists
+        fileDialog.setMimeTypeFilters(supportedMimeTypes);
+    }
+    fileDialog.setDirectory(QStandardPaths::standardLocations(QStandardPaths::MoviesLocation).value(0, QDir::homePath()));
+    if (fileDialog.exec() == QDialog::Accepted)
+        addToPlaylist(fileDialog.selectedUrls());
+}
+
+static bool isPlaylist(const QUrl &url) // Check for ".m3u" playlists.
+{
+    if (!url.isLocalFile())
+        return false;
+    const QFileInfo fileInfo(url.toLocalFile());
+    return fileInfo.exists() && !fileInfo.suffix().compare(QLatin1String("m3u"), Qt::CaseInsensitive);
+}
+
+void Player::addToPlaylist(const QList<QUrl> urls)
+{
+    foreach (const QUrl &url, urls) {
+        if (isPlaylist(url))
+            playlist->load(url);
+        else
+            playlist->addMedia(url);
     }
 }
 

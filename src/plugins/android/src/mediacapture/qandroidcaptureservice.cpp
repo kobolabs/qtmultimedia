@@ -1,39 +1,31 @@
 /****************************************************************************
 **
-** Copyright (C) 2013 Digia Plc and/or its subsidiary(-ies).
-** Contact: http://www.qt-project.org/legal
+** Copyright (C) 2015 The Qt Company Ltd.
+** Contact: http://www.qt.io/licensing/
 **
 ** This file is part of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL$
+** $QT_BEGIN_LICENSE:LGPL21$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and Digia.  For licensing terms and
-** conditions see http://qt.digia.com/licensing.  For further information
-** use the contact form at http://qt.digia.com/contact-us.
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see http://www.qt.io/terms-conditions. For further
+** information use the contact form at http://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU Lesser General Public License version 2.1 requirements
-** will be met: http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 2.1 or version 3 as published by the Free
+** Software Foundation and appearing in the file LICENSE.LGPLv21 and
+** LICENSE.LGPLv3 included in the packaging of this file. Please review the
+** following information to ensure the GNU Lesser General Public License
+** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
+** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
 **
-** In addition, as a special exception, Digia gives you certain additional
-** rights.  These rights are described in the Digia Qt LGPL Exception
+** As a special exception, The Qt Company gives you certain additional
+** rights. These rights are described in The Qt Company LGPL Exception
 ** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3.0 as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU General Public License version 3.0 requirements will be
-** met: http://www.gnu.org/copyleft/gpl.html.
-**
 **
 ** $QT_END_LICENSE$
 **
@@ -44,10 +36,11 @@
 #include "qandroidmediarecordercontrol.h"
 #include "qandroidcapturesession.h"
 #include "qandroidcameracontrol.h"
+#include "qandroidcamerainfocontrol.h"
 #include "qandroidvideodeviceselectorcontrol.h"
 #include "qandroidaudioinputselectorcontrol.h"
 #include "qandroidcamerasession.h"
-#include "qandroidvideorendercontrol.h"
+#include "qandroidcameravideorenderercontrol.h"
 #include "qandroidcamerazoomcontrol.h"
 #include "qandroidcameraexposurecontrol.h"
 #include "qandroidcameraflashcontrol.h"
@@ -61,6 +54,7 @@
 #include "qandroidaudioencodersettingscontrol.h"
 #include "qandroidvideoencodersettingscontrol.h"
 #include "qandroidmediacontainercontrol.h"
+#include "qandroidmediavideoprobecontrol.h"
 
 #include <qmediaserviceproviderplugin.h>
 
@@ -74,6 +68,7 @@ QAndroidCaptureService::QAndroidCaptureService(const QString &service, QObject *
     if (m_service == QLatin1String(Q_MEDIASERVICE_CAMERA)) {
         m_cameraSession = new QAndroidCameraSession;
         m_cameraControl = new QAndroidCameraControl(m_cameraSession);
+        m_cameraInfoControl = new QAndroidCameraInfoControl;
         m_videoInputControl = new QAndroidVideoDeviceSelectorControl(m_cameraSession);
         m_cameraZoomControl = new QAndroidCameraZoomControl(m_cameraSession);
         m_cameraExposureControl = new QAndroidCameraExposureControl(m_cameraSession);
@@ -89,6 +84,7 @@ QAndroidCaptureService::QAndroidCaptureService(const QString &service, QObject *
     } else {
         m_cameraSession = 0;
         m_cameraControl = 0;
+        m_cameraInfoControl = 0;
         m_videoInputControl = 0;
         m_cameraZoomControl = 0;
         m_cameraExposureControl = 0;
@@ -124,6 +120,7 @@ QAndroidCaptureService::~QAndroidCaptureService()
     delete m_recorderControl;
     delete m_captureSession;
     delete m_cameraControl;
+    delete m_cameraInfoControl;
     delete m_audioInputControl;
     delete m_videoInputControl;
     delete m_videoRendererControl;
@@ -156,6 +153,9 @@ QMediaControl *QAndroidCaptureService::requestControl(const char *name)
 
     if (qstrcmp(name, QCameraControl_iid) == 0)
         return m_cameraControl;
+
+    if (qstrcmp(name, QCameraInfoControl_iid) == 0)
+        return m_cameraInfoControl;
 
     if (qstrcmp(name, QAudioInputSelectorControl_iid) == 0)
         return m_audioInputControl;
@@ -196,9 +196,17 @@ QMediaControl *QAndroidCaptureService::requestControl(const char *name)
     if (qstrcmp(name, QVideoRendererControl_iid) == 0
             && m_service == QLatin1String(Q_MEDIASERVICE_CAMERA)
             && !m_videoRendererControl) {
-        m_videoRendererControl = new QAndroidVideoRendererControl;
-        m_cameraSession->setVideoPreview(m_videoRendererControl);
+        m_videoRendererControl = new QAndroidCameraVideoRendererControl(m_cameraSession);
         return m_videoRendererControl;
+    }
+
+    if (qstrcmp(name,QMediaVideoProbeControl_iid) == 0) {
+        QAndroidMediaVideoProbeControl *videoProbe = 0;
+        if (m_cameraSession) {
+            videoProbe = new QAndroidMediaVideoProbeControl(this);
+            m_cameraSession->addProbe(videoProbe);
+        }
+        return videoProbe;
     }
 
     return 0;
@@ -206,11 +214,22 @@ QMediaControl *QAndroidCaptureService::requestControl(const char *name)
 
 void QAndroidCaptureService::releaseControl(QMediaControl *control)
 {
-    if (control && control == m_videoRendererControl) {
-        m_cameraSession->setVideoPreview(0);
-        delete m_videoRendererControl;
-        m_videoRendererControl = 0;
+    if (control) {
+        if (control == m_videoRendererControl) {
+            delete m_videoRendererControl;
+            m_videoRendererControl = 0;
+            return;
+        }
+
+        QAndroidMediaVideoProbeControl *videoProbe = qobject_cast<QAndroidMediaVideoProbeControl *>(control);
+        if (videoProbe) {
+            if (m_cameraSession)
+                m_cameraSession->removeProbe(videoProbe);
+            delete videoProbe;
+            return;
+        }
     }
+
 }
 
 QT_END_NAMESPACE

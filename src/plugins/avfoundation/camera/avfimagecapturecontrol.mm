@@ -1,39 +1,31 @@
 /****************************************************************************
 **
-** Copyright (C) 2013 Digia Plc and/or its subsidiary(-ies).
-** Contact: http://www.qt-project.org/legal
+** Copyright (C) 2016 The Qt Company Ltd and/or its subsidiary(-ies).
+** Contact: http://www.qt.io/licensing/
 **
 ** This file is part of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL$
+** $QT_BEGIN_LICENSE:LGPL21$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and Digia.  For licensing terms and
-** conditions see http://qt.digia.com/licensing.  For further information
-** use the contact form at http://qt.digia.com/contact-us.
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see http://www.qt.io/terms-conditions. For further
+** information use the contact form at http://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU Lesser General Public License version 2.1 requirements
-** will be met: http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 2.1 or version 3 as published by the Free
+** Software Foundation and appearing in the file LICENSE.LGPLv21 and
+** LICENSE.LGPLv3 included in the packaging of this file. Please review the
+** following information to ensure the GNU Lesser General Public License
+** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
+** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
 **
-** In addition, as a special exception, Digia gives you certain additional
-** rights.  These rights are described in the Digia Qt LGPL Exception
+** As a special exception, The Qt Company gives you certain additional
+** rights. These rights are described in The Qt Company LGPL Exception
 ** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3.0 as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU General Public License version 3.0 requirements will be
-** met: http://www.gnu.org/copyleft/gpl.html.
-**
 **
 ** $QT_END_LICENSE$
 **
@@ -41,26 +33,28 @@
 
 #include "avfcameradebug.h"
 #include "avfimagecapturecontrol.h"
-#include "avfcamerasession.h"
 #include "avfcameraservice.h"
+#include "avfcamerautility.h"
 #include "avfcameracontrol.h"
 
 #include <QtCore/qurl.h>
 #include <QtCore/qfile.h>
 #include <QtCore/qbuffer.h>
+#include <QtConcurrent/qtconcurrentrun.h>
 #include <QtGui/qimagereader.h>
+#include <private/qvideoframe_p.h>
 
 QT_USE_NAMESPACE
 
 AVFImageCaptureControl::AVFImageCaptureControl(AVFCameraService *service, QObject *parent)
    : QCameraImageCaptureControl(parent)
-   , m_service(service)
    , m_session(service->session())
    , m_cameraControl(service->cameraControl())
    , m_ready(false)
    , m_lastCaptureId(0)
    , m_videoConnection(nil)
 {
+    Q_UNUSED(service);
     m_stillImageOutput = [[AVCaptureStillImageOutput alloc] init];
 
     NSDictionary *outputSettings = [[NSDictionary alloc] initWithObjectsAndKeys:
@@ -73,6 +67,11 @@ AVFImageCaptureControl::AVFImageCaptureControl(AVFCameraService *service, QObjec
     connect(m_cameraControl, SIGNAL(statusChanged(QCamera::Status)), SLOT(updateReadyStatus()));
 
     connect(m_session, SIGNAL(readyToConfigureConnections()), SLOT(updateCaptureConnection()));
+    connect(m_cameraControl, SIGNAL(captureModeChanged(QCamera::CaptureModes)), SLOT(updateCaptureConnection()));
+
+    connect(m_session, &AVFCameraSession::newViewfinderFrame,
+            this, &AVFImageCaptureControl::onNewViewfinderFrame,
+            Qt::DirectConnection);
 }
 
 AVFImageCaptureControl::~AVFImageCaptureControl()
@@ -114,9 +113,18 @@ int AVFImageCaptureControl::capture(const QString &fileName)
 
     qDebugCamera() << "Capture image to" << actualFileName;
 
-    int captureId = m_lastCaptureId;
+    CaptureRequest request = { m_lastCaptureId, new QSemaphore };
+    m_requestsMutex.lock();
+    m_captureRequests.enqueue(request);
+    m_requestsMutex.unlock();
+
     [m_stillImageOutput captureStillImageAsynchronouslyFromConnection:m_videoConnection
                         completionHandler: ^(CMSampleBufferRef imageSampleBuffer, NSError *error) {
+
+        // Wait for the preview to be generated before saving the JPEG
+        request.previewReady->acquire();
+        delete request.previewReady;
+
         if (error) {
             QStringList messageParts;
             messageParts << QString::fromUtf8([[error localizedDescription] UTF8String]);
@@ -127,64 +135,66 @@ int AVFImageCaptureControl::capture(const QString &fileName)
             qDebugCamera() << "Image capture failed:" << errorMessage;
 
             QMetaObject::invokeMethod(this, "error", Qt::QueuedConnection,
-                                      Q_ARG(int, captureId),
+                                      Q_ARG(int, request.captureId),
                                       Q_ARG(int, QCameraImageCapture::ResourceError),
                                       Q_ARG(QString, errorMessage));
         } else {
-            qDebugCamera() << "Image captured:" << actualFileName;
-            //we can't find the exact time the image is exposed,
-            //but image capture is very fast on desktop, so emit it here
-            QMetaObject::invokeMethod(this, "imageExposed", Qt::QueuedConnection,
-                                      Q_ARG(int, captureId));
+            qDebugCamera() << "Image capture completed:" << actualFileName;
 
             NSData *nsJpgData = [AVCaptureStillImageOutput jpegStillImageNSDataRepresentation:imageSampleBuffer];
             QByteArray jpgData = QByteArray::fromRawData((const char *)[nsJpgData bytes], [nsJpgData length]);
-
-            //Generate snap preview as downscalled image
-            {
-                QBuffer buffer(&jpgData);
-                QImageReader imageReader(&buffer);
-                QSize imgSize = imageReader.size();
-                int downScaleSteps = 0;
-                while (imgSize.width() > 800 && downScaleSteps < 8) {
-                    imgSize.rwidth() /= 2;
-                    imgSize.rheight() /= 2;
-                    downScaleSteps++;
-                }
-
-                imageReader.setScaledSize(imgSize);
-                QImage snapPreview = imageReader.read();
-
-                QMetaObject::invokeMethod(this, "imageCaptured", Qt::QueuedConnection,
-                                          Q_ARG(int, captureId),
-                                          Q_ARG(QImage, snapPreview));
-            }
-
-            qDebugCamera() << "Image captured" << actualFileName;
 
             QFile f(actualFileName);
             if (f.open(QFile::WriteOnly)) {
                 if (f.write(jpgData) != -1) {
                     QMetaObject::invokeMethod(this, "imageSaved", Qt::QueuedConnection,
-                                              Q_ARG(int, captureId),
+                                              Q_ARG(int, request.captureId),
                                               Q_ARG(QString, actualFileName));
                 } else {
                     QMetaObject::invokeMethod(this, "error", Qt::QueuedConnection,
-                                              Q_ARG(int, captureId),
+                                              Q_ARG(int, request.captureId),
                                               Q_ARG(int, QCameraImageCapture::OutOfSpaceError),
                                               Q_ARG(QString, f.errorString()));
                 }
             } else {
                 QString errorMessage = tr("Could not open destination file:\n%1").arg(actualFileName);
                 QMetaObject::invokeMethod(this, "error", Qt::QueuedConnection,
-                                          Q_ARG(int, captureId),
+                                          Q_ARG(int, request.captureId),
                                           Q_ARG(int, QCameraImageCapture::ResourceError),
                                           Q_ARG(QString, errorMessage));
             }
         }
     }];
 
-    return captureId;
+    return request.captureId;
+}
+
+void AVFImageCaptureControl::onNewViewfinderFrame(const QVideoFrame &frame)
+{
+    QMutexLocker locker(&m_requestsMutex);
+
+    if (m_captureRequests.isEmpty())
+        return;
+
+    CaptureRequest request = m_captureRequests.dequeue();
+    Q_EMIT imageExposed(request.captureId);
+
+    QtConcurrent::run(this, &AVFImageCaptureControl::makeCapturePreview,
+                      request,
+                      frame,
+                      0 /* rotation */);
+}
+
+void AVFImageCaptureControl::makeCapturePreview(CaptureRequest request,
+                                                const QVideoFrame &frame,
+                                                int rotation)
+{
+    QTransform transform;
+    transform.rotate(rotation);
+
+    Q_EMIT imageCaptured(request.captureId, qt_imageFromVideoFrame(frame).transformed(transform));
+
+    request.previewReady->release();
 }
 
 void AVFImageCaptureControl::cancelCapture()
@@ -194,28 +204,21 @@ void AVFImageCaptureControl::cancelCapture()
 
 void AVFImageCaptureControl::updateCaptureConnection()
 {
-    if (!m_videoConnection &&
-            m_cameraControl->captureMode().testFlag(QCamera::CaptureStillImage)) {
+    if (m_cameraControl->captureMode().testFlag(QCamera::CaptureStillImage)) {
         qDebugCamera() << Q_FUNC_INFO;
         AVCaptureSession *captureSession = m_session->captureSession();
 
-        if ([captureSession canAddOutput:m_stillImageOutput]) {
-            [captureSession addOutput:m_stillImageOutput];
-
-            for (AVCaptureConnection *connection in m_stillImageOutput.connections) {
-                for (AVCaptureInputPort *port in [connection inputPorts]) {
-                    if ([[port mediaType] isEqual:AVMediaTypeVideo] ) {
-                        m_videoConnection = connection;
-                        break;
-                    }
-                }
-
-                if (m_videoConnection)
-                    break;
+        if (![captureSession.outputs containsObject:m_stillImageOutput]) {
+            if ([captureSession canAddOutput:m_stillImageOutput]) {
+                // Lock the video capture device to make sure the active format is not reset
+                const AVFConfigurationLock lock(m_session->videoCaptureDevice());
+                [captureSession addOutput:m_stillImageOutput];
+                m_videoConnection = [m_stillImageOutput connectionWithMediaType:AVMediaTypeVideo];
+                updateReadyStatus();
             }
+        } else {
+            m_videoConnection = [m_stillImageOutput connectionWithMediaType:AVMediaTypeVideo];
         }
-
-        updateReadyStatus();
     }
 }
 

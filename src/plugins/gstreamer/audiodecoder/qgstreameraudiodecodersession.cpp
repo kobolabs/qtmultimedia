@@ -1,39 +1,31 @@
 /****************************************************************************
 **
-** Copyright (C) 2013 Digia Plc and/or its subsidiary(-ies).
-** Contact: http://www.qt-project.org/legal
+** Copyright (C) 2015 The Qt Company Ltd.
+** Contact: http://www.qt.io/licensing/
 **
 ** This file is part of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL$
+** $QT_BEGIN_LICENSE:LGPL21$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and Digia.  For licensing terms and
-** conditions see http://qt.digia.com/licensing.  For further information
-** use the contact form at http://qt.digia.com/contact-us.
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see http://www.qt.io/terms-conditions. For further
+** information use the contact form at http://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU Lesser General Public License version 2.1 requirements
-** will be met: http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 2.1 or version 3 as published by the Free
+** Software Foundation and appearing in the file LICENSE.LGPLv21 and
+** LICENSE.LGPLv3 included in the packaging of this file. Please review the
+** following information to ensure the GNU Lesser General Public License
+** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
+** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
 **
-** In addition, as a special exception, Digia gives you certain additional
-** rights.  These rights are described in the Digia Qt LGPL Exception
+** As a special exception, The Qt Company gives you certain additional
+** rights. These rights are described in The Qt Company LGPL Exception
 ** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3.0 as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU General Public License version 3.0 requirements will be
-** met: http://www.gnu.org/copyleft/gpl.html.
-**
 **
 ** $QT_END_LICENSE$
 **
@@ -93,7 +85,7 @@ QGstreamerAudioDecoderSession::QGstreamerAudioDecoderSession(QObject *parent)
      m_durationQueries(0)
 {
     // Create pipeline here
-    m_playbin = gst_element_factory_make("playbin2", NULL);
+    m_playbin = gst_element_factory_make(QT_GSTREAMER_PLAYBIN_ELEMENT_NAME, NULL);
 
     if (m_playbin != 0) {
         // Sort out messages
@@ -150,14 +142,13 @@ void QGstreamerAudioDecoderSession::configureAppSrcElement(GObject* object, GObj
     if (!self->appsrc())
         return;
 
-    if (self->appsrc()->isReady())
-        return;
-
     GstElement *appsrc;
     g_object_get(orig, "source", &appsrc, NULL);
 
     if (!self->appsrc()->setup(appsrc))
         qWarning()<<"Could not setup appsrc element";
+
+    g_object_unref(G_OBJECT(appsrc));
 }
 #endif
 
@@ -356,9 +347,8 @@ void QGstreamerAudioDecoderSession::start()
             return;
         }
 
-        if (m_appSrc)
-            m_appSrc->deleteLater();
-        m_appSrc = new QGstAppSrc(this);
+        if (!m_appSrc)
+            m_appSrc = new QGstAppSrc(this);
         m_appSrc->setStream(mDevice);
 
         g_object_set(G_OBJECT(m_playbin), "uri", "appsrc://", NULL);
@@ -372,7 +362,8 @@ void QGstreamerAudioDecoderSession::start()
         if (mFormat.isValid()) {
             setAudioFlags(false);
             GstCaps *caps = QGstUtils::capsForAudioFormat(mFormat);
-            gst_app_sink_set_caps(m_appSink, caps); // appsink unrefs caps
+            gst_app_sink_set_caps(m_appSink, caps);
+            gst_caps_unref(caps);
         } else {
             // We want whatever the native audio format is
             setAudioFlags(true);
@@ -451,21 +442,40 @@ QAudioBuffer QGstreamerAudioDecoderSession::read()
         if (buffersAvailable == 1)
             emit bufferAvailableChanged(false);
 
-        GstBuffer *buffer = gst_app_sink_pull_buffer(m_appSink);
+        const char* bufferData = 0;
+        int bufferSize = 0;
 
+#if GST_CHECK_VERSION(1,0,0)
+        GstSample *sample = gst_app_sink_pull_sample(m_appSink);
+        GstBuffer *buffer = gst_sample_get_buffer(sample);
+        GstMapInfo mapInfo;
+        gst_buffer_map(buffer, &mapInfo, GST_MAP_READ);
+        bufferData = (const char*)mapInfo.data;
+        bufferSize = mapInfo.size;
+        QAudioFormat format = QGstUtils::audioFormatForSample(sample);
+#else
+        GstBuffer *buffer = gst_app_sink_pull_buffer(m_appSink);
+        bufferData = (const char*)buffer->data;
+        bufferSize = buffer->size;
         QAudioFormat format = QGstUtils::audioFormatForBuffer(buffer);
+#endif
+
         if (format.isValid()) {
             // XXX At the moment we have to copy data from GstBuffer into QAudioBuffer.
             // We could improve performance by implementing QAbstractAudioBuffer for GstBuffer.
             qint64 position = getPositionFromBuffer(buffer);
-            audioBuffer = QAudioBuffer(QByteArray((const char*)buffer->data, buffer->size), format, position);
+            audioBuffer = QAudioBuffer(QByteArray((const char*)bufferData, bufferSize), format, position);
             position /= 1000; // convert to milliseconds
             if (position != m_position) {
                 m_position = position;
                 emit positionChanged(m_position);
             }
         }
+#if GST_CHECK_VERSION(1,0,0)
+        gst_sample_unref(sample);
+#else
         gst_buffer_unref(buffer);
+#endif
     }
 
     return audioBuffer;
@@ -493,7 +503,7 @@ void QGstreamerAudioDecoderSession::processInvalidMedia(QAudioDecoder::Error err
     emit error(int(errorCode), errorString);
 }
 
-GstFlowReturn QGstreamerAudioDecoderSession::new_buffer(GstAppSink *, gpointer user_data)
+GstFlowReturn QGstreamerAudioDecoderSession::new_sample(GstAppSink *, gpointer user_data)
 {
     // "Note that the preroll buffer will also be returned as the first buffer when calling gst_app_sink_pull_buffer()."
     QGstreamerAudioDecoderSession *session = reinterpret_cast<QGstreamerAudioDecoderSession*>(user_data);
@@ -536,7 +546,11 @@ void QGstreamerAudioDecoderSession::addAppSink()
 
     GstAppSinkCallbacks callbacks;
     memset(&callbacks, 0, sizeof(callbacks));
-    callbacks.new_buffer = &new_buffer;
+#if GST_CHECK_VERSION(1,0,0)
+    callbacks.new_sample = &new_sample;
+#else
+    callbacks.new_buffer = &new_sample;
+#endif
     gst_app_sink_set_callbacks(m_appSink, &callbacks, this, NULL);
     gst_app_sink_set_max_buffers(m_appSink, MAX_BUFFERS_IN_QUEUE);
     gst_base_sink_set_sync(GST_BASE_SINK(m_appSink), FALSE);
@@ -558,11 +572,10 @@ void QGstreamerAudioDecoderSession::removeAppSink()
 
 void QGstreamerAudioDecoderSession::updateDuration()
 {
-    GstFormat format = GST_FORMAT_TIME;
     gint64 gstDuration = 0;
     int duration = -1;
 
-    if (m_playbin && gst_element_query_duration(m_playbin, &format, &gstDuration))
+    if (m_playbin && qt_gst_element_query_duration(m_playbin, GST_FORMAT_TIME, &gstDuration))
         duration = gstDuration / 1000000;
 
     if (m_duration != duration) {

@@ -1,39 +1,31 @@
 /****************************************************************************
 **
-** Copyright (C) 2013 Digia Plc and/or its subsidiary(-ies).
-** Contact: http://www.qt-project.org/legal
+** Copyright (C) 2015 The Qt Company Ltd and/or its subsidiary(-ies).
+** Contact: http://www.qt.io/licensing/
 **
 ** This file is part of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL$
+** $QT_BEGIN_LICENSE:LGPL21$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and Digia.  For licensing terms and
-** conditions see http://qt.digia.com/licensing.  For further information
-** use the contact form at http://qt.digia.com/contact-us.
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see http://www.qt.io/terms-conditions. For further
+** information use the contact form at http://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU Lesser General Public License version 2.1 requirements
-** will be met: http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 2.1 or version 3 as published by the Free
+** Software Foundation and appearing in the file LICENSE.LGPLv21 and
+** LICENSE.LGPLv3 included in the packaging of this file. Please review the
+** following information to ensure the GNU Lesser General Public License
+** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
+** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
 **
-** In addition, as a special exception, Digia gives you certain additional
-** rights.  These rights are described in the Digia Qt LGPL Exception
+** As a special exception, The Qt Company gives you certain additional
+** rights. These rights are described in The Qt Company LGPL Exception
 ** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3.0 as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU General Public License version 3.0 requirements will be
-** met: http://www.gnu.org/copyleft/gpl.html.
-**
 **
 ** $QT_END_LICENSE$
 **
@@ -45,6 +37,7 @@
 # include "coreaudiosessionmanager.h"
 #endif
 
+#include <QtCore/QDataStream>
 #include <QtCore/QDebug>
 #include <QtCore/QSet>
 
@@ -61,6 +54,11 @@ CoreAudioDeviceInfo::CoreAudioDeviceInfo(const QByteArray &device, QAudio::Mode 
     m_deviceId = AudioDeviceID(deviceID);
 #else //iOS
     m_device = device;
+    if (mode == QAudio::AudioInput) {
+        if (CoreAudioSessionManager::instance().category() != CoreAudioSessionManager::PlayAndRecord) {
+            CoreAudioSessionManager::instance().setCategory(CoreAudioSessionManager::PlayAndRecord);
+        }
+    }
 #endif
 }
 
@@ -105,7 +103,7 @@ QAudioFormat CoreAudioDeviceInfo::preferredFormat() const
                 }
             }
 
-            delete streams;
+            delete[] streams;
         }
     }
 #else //iOS
@@ -130,9 +128,11 @@ bool CoreAudioDeviceInfo::isFormatSupported(const QAudioFormat &format) const
 {
     CoreAudioDeviceInfo *self = const_cast<CoreAudioDeviceInfo*>(this);
 
+    //Sample rates are more of a suggestion with CoreAudio so as long as we get a
+    //sane value then we can likely use it.
     return format.isValid()
             && format.codec() == QString::fromLatin1("audio/pcm")
-            && self->supportedSampleRates().contains(format.sampleRate())
+            && format.sampleRate() > 0
             && self->supportedChannelCounts().contains(format.channelCount())
             && self->supportedSampleSizes().contains(format.sampleSize());
 }
@@ -168,11 +168,12 @@ QList<int> CoreAudioDeviceInfo::supportedSampleRates()
             AudioValueRange* vr = new AudioValueRange[pc];
 
             if (AudioObjectGetPropertyData(m_deviceId, &availableNominalSampleRatesAddress, 0, NULL, &propSize, vr) == noErr) {
-                for (int i = 0; i < pc; ++i)
-                    sampleRates << vr[i].mMaximum;
+                for (int i = 0; i < pc; ++i) {
+                    sampleRates << vr[i].mMinimum << vr[i].mMaximum;
+                }
             }
 
-            delete vr;
+            delete[] vr;
         }
     }
 #else //iOS
@@ -188,39 +189,16 @@ QList<int> CoreAudioDeviceInfo::supportedSampleRates()
 
 QList<int> CoreAudioDeviceInfo::supportedChannelCounts()
 {
-    QSet<int> supportedChannels;
+    static QList<int> supportedChannels;
 
-#if defined(Q_OS_OSX)
-    UInt32 propSize = 0;
-    int channels = 0;
-    AudioObjectPropertyScope scope = m_mode == QAudio::AudioInput ? kAudioDevicePropertyScopeInput : kAudioDevicePropertyScopeOutput;
-    AudioObjectPropertyAddress streamConfigurationPropertyAddress = { kAudioDevicePropertyStreamConfiguration,
-                                                                      scope,
-                                                                      kAudioObjectPropertyElementMaster };
-
-    if (AudioObjectGetPropertyDataSize(m_deviceId, &streamConfigurationPropertyAddress, 0, NULL, &propSize) == noErr) {
-        AudioBufferList* audioBufferList = static_cast<AudioBufferList*>(malloc(propSize));
-
-        if (audioBufferList != 0) {
-            if (AudioObjectGetPropertyData(m_deviceId, &streamConfigurationPropertyAddress, 0, NULL, &propSize, audioBufferList) == noErr) {
-                for (int i = 0; i < int(audioBufferList->mNumberBuffers); ++i) {
-                    channels += audioBufferList->mBuffers[i].mNumberChannels;
-                    supportedChannels << channels;
-                }
-            }
-
-            free(audioBufferList);
-        }
+    if (supportedChannels.isEmpty()) {
+        // If the number of channels is not supported by an audio device, Core Audio will
+        // automatically convert the audio data.
+        for (int i = 1; i <= 16; ++i)
+            supportedChannels.append(i);
     }
-#else //iOS
-    if (m_mode == QAudio::AudioInput) {
-        supportedChannels << CoreAudioSessionManager::instance().inputChannelCount();
-    } else if (m_mode == QAudio::AudioOutput) {
-        supportedChannels << CoreAudioSessionManager::instance().outputChannelCount();
-    }
-#endif
 
-    return supportedChannels.toList();
+    return supportedChannels;
 }
 
 
@@ -323,7 +301,7 @@ QByteArray CoreAudioDeviceInfo::defaultOutputDevice()
 #if defined(Q_OS_OSX)
     AudioDeviceID audioDevice;
     UInt32        size = sizeof(audioDevice);
-    AudioObjectPropertyAddress defaultOutputDevicePropertyAddress = { kAudioHardwarePropertyDefaultInputDevice,
+    AudioObjectPropertyAddress defaultOutputDevicePropertyAddress = { kAudioHardwarePropertyDefaultOutputDevice,
                                                                      kAudioObjectPropertyScopeGlobal,
                                                                      kAudioObjectPropertyElementMaster };
 
@@ -359,17 +337,28 @@ QList<QByteArray> CoreAudioDeviceInfo::availableDevices(QAudio::Mode mode)
             AudioDeviceID*  audioDevices = new AudioDeviceID[dc];
 
             if (AudioObjectGetPropertyData(kAudioObjectSystemObject, &audioDevicesPropertyAddress, 0, NULL, &propSize, audioDevices) == noErr) {
+                QByteArray defaultDevice = (mode == QAudio::AudioOutput) ? defaultOutputDevice() : defaultInputDevice();
                 for (int i = 0; i < dc; ++i) {
                     QByteArray info = get_device_info(audioDevices[i], mode);
-                    if (!info.isNull())
-                        devices << info;
+                    if (!info.isNull()) {
+                        if (info == defaultDevice)
+                            devices.prepend(info);
+                        else
+                            devices << info;
+                    }
                 }
             }
 
-            delete audioDevices;
+            delete[] audioDevices;
         }
     }
 #else //iOS
+    if (mode == QAudio::AudioInput) {
+        if (CoreAudioSessionManager::instance().category() != CoreAudioSessionManager::PlayAndRecord) {
+            CoreAudioSessionManager::instance().setCategory(CoreAudioSessionManager::PlayAndRecord);
+        }
+    }
+
     CoreAudioSessionManager::instance().setActive(true);
 
     if (mode == QAudio::AudioOutput)

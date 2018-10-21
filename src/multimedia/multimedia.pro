@@ -1,9 +1,16 @@
 TARGET = QtMultimedia
 QT = core-private network gui-private
 
-QMAKE_DOCS = $$PWD/doc/qtmultimedia.qdocconf
+MODULE_PLUGIN_TYPES = \
+    mediaservice \
+    audio \
+    video/bufferpool \
+    video/gstvideorenderer \
+    video/videonode \
+    playlistformats \
+    resourcepolicy
 
-load(qt_module)
+QMAKE_DOCS = $$PWD/doc/qtmultimedia.qdocconf
 
 INCLUDEPATH *= .
 
@@ -15,7 +22,10 @@ PRIVATE_HEADERS += \
     qmediaserviceprovider_p.h \
     qmediaresourcepolicyplugin_p.h \
     qmediaresourcepolicy_p.h \
-    qmediaresourceset_p.h
+    qmediaresourceset_p.h \
+    qmediastoragelocation_p.h \
+    qmediaopenglhelper_p.h \
+    qmultimediautils_p.h
 
 PUBLIC_HEADERS += \
     qmediabindableinterface.h \
@@ -41,7 +51,11 @@ SOURCES += \
     qmediaresourcepolicyplugin_p.cpp \
     qmediaresourcepolicy_p.cpp \
     qmediaresourceset_p.cpp \
-    qmultimedia.cpp
+    qmediastoragelocation.cpp \
+    qmultimedia.cpp \
+    qmultimediautils.cpp
+
+CONFIG += simd optimize_full
 
 include(audio/audio.pri)
 include(camera/camera.pri)
@@ -64,12 +78,16 @@ ANDROID_PERMISSIONS += \
     android.permission.CAMERA \
     android.permission.RECORD_AUDIO
 ANDROID_FEATURES += \
-    android.hardware.camera
-MODULE_PLUGIN_TYPES = \
-    mediaservice \
-    audio \
-    video/videonode
+    android.hardware.camera \
+    android.hardware.camera.autofocus \
+    android.hardware.microphone
+
+MODULE_WINRT_CAPABILITIES_DEVICE += \
+    microphone \
+    webcam
 
 win32: LIBS_PRIVATE += -luuid
 
 HEADERS += $$PUBLIC_HEADERS $$PRIVATE_HEADERS
+
+load(qt_module)

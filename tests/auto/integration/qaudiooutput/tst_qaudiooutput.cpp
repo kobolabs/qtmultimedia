@@ -1,39 +1,31 @@
 /****************************************************************************
 **
-** Copyright (C) 2013 Digia Plc and/or its subsidiary(-ies).
-** Contact: http://www.qt-project.org/legal
+** Copyright (C) 2015 The Qt Company Ltd.
+** Contact: http://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL$
+** $QT_BEGIN_LICENSE:LGPL21$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and Digia.  For licensing terms and
-** conditions see http://qt.digia.com/licensing.  For further information
-** use the contact form at http://qt.digia.com/contact-us.
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see http://www.qt.io/terms-conditions. For further
+** information use the contact form at http://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU Lesser General Public License version 2.1 requirements
-** will be met: http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 2.1 or version 3 as published by the Free
+** Software Foundation and appearing in the file LICENSE.LGPLv21 and
+** LICENSE.LGPLv3 included in the packaging of this file. Please review the
+** following information to ensure the GNU Lesser General Public License
+** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
+** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
 **
-** In addition, as a special exception, Digia gives you certain additional
-** rights.  These rights are described in the Digia Qt LGPL Exception
+** As a special exception, The Qt Company gives you certain additional
+** rights. These rights are described in The Qt Company LGPL Exception
 ** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3.0 as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU General Public License version 3.0 requirements will be
-** met: http://www.gnu.org/copyleft/gpl.html.
-**
 **
 ** $QT_END_LICENSE$
 **
@@ -540,8 +532,8 @@ void tst_QAudioOutput::pull()
     QTest::qWait(3000); // 3 seconds should be plenty
 
     QVERIFY2(audioFile->atEnd(), "didn't play to EOF");
-    QVERIFY2((stateSignal.count() == 1),
-             QString("didn't emit IdleState signal when at EOF, got %1 signals instead").arg(stateSignal.count()).toLocal8Bit().constData());
+    QVERIFY(stateSignal.count() > 0);
+    QCOMPARE(qvariant_cast<QAudio::State>(stateSignal.last().at(0)), QAudio::IdleState);
     QVERIFY2((audioOutput.state() == QAudio::IdleState), "didn't transitions to IdleState when at EOF");
     stateSignal.clear();
 
@@ -620,9 +612,6 @@ void tst_QAudioOutput::pullSuspendResume()
 
     audioOutput.resume();
 
-    // Give backends running in separate threads a chance to suspend.
-    QTest::qWait(100);
-
     // Check that QAudioOutput immediately transitions to ActiveState
     QVERIFY2((stateSignal.count() == 1),
              QString("didn't emit signal after resume(), got %1 signals instead").arg(stateSignal.count()).toLocal8Bit().constData());
@@ -634,8 +623,8 @@ void tst_QAudioOutput::pullSuspendResume()
     QTest::qWait(3000); // 3 seconds should be plenty
 
     QVERIFY2(audioFile->atEnd(), "didn't play to EOF");
-    QVERIFY2((stateSignal.count() == 1),
-             QString("didn't emit IdleState signal when at EOF, got %1 signals instead").arg(stateSignal.count()).toLocal8Bit().constData());
+    QVERIFY(stateSignal.count() > 0);
+    QCOMPARE(qvariant_cast<QAudio::State>(stateSignal.last().at(0)), QAudio::IdleState);
     QVERIFY2((audioOutput.state() == QAudio::IdleState), "didn't transitions to IdleState when at EOF");
     stateSignal.clear();
 
@@ -710,18 +699,18 @@ void tst_QAudioOutput::push()
                 QVERIFY2((audioOutput.state() == QAudio::ActiveState), "didn't transition to ActiveState after receiving data");
                 QVERIFY2((audioOutput.error() == QAudio::NoError), "error state is not equal to QAudio::NoError after receiving data");
                 firstBuffer = false;
+                stateSignal.clear();
             }
         } else
             QTest::qWait(20);
     }
-    stateSignal.clear();
 
     // Wait until playback finishes
     QTest::qWait(3000); // 3 seconds should be plenty
 
     QVERIFY2(audioFile->atEnd(), "didn't play to EOF");
-    QVERIFY2((stateSignal.count() == 1),
-             QString("didn't emit IdleState signal when at EOF, got %1 signals instead").arg(stateSignal.count()).toLocal8Bit().constData());
+    QVERIFY(stateSignal.count() > 0);
+    QCOMPARE(qvariant_cast<QAudio::State>(stateSignal.last().at(0)), QAudio::IdleState);
     QVERIFY2((audioOutput.state() == QAudio::IdleState), "didn't transitions to IdleState when at EOF");
     stateSignal.clear();
 
@@ -833,10 +822,10 @@ void tst_QAudioOutput::pushSuspendResume()
     // but not too much or the rest of the file may be processed
     QTest::qWait(20);
 
-    // Check that QAudioOutput immediately transitions to ActiveState
+    // Check that QAudioOutput immediately transitions to IdleState
     QVERIFY2((stateSignal.count() == 1),
              QString("didn't emit signal after resume(), got %1 signals instead").arg(stateSignal.count()).toLocal8Bit().constData());
-    QVERIFY2((audioOutput.state() == QAudio::ActiveState), "didn't transition to ActiveState after resume()");
+    QVERIFY2((audioOutput.state() == QAudio::IdleState), "didn't transition to IdleState after resume()");
     QVERIFY2((audioOutput.error() == QAudio::NoError), "error state is not equal to QAudio::NoError after resume()");
     stateSignal.clear();
 
@@ -845,6 +834,7 @@ void tst_QAudioOutput::pushSuspendResume()
         if (audioOutput.bytesFree() >= audioOutput.periodSize()) {
             qint64 len = audioFile->read(buffer.data(),audioOutput.periodSize());
             written += feed->write(buffer.constData(), len);
+            QVERIFY2((audioOutput.state() == QAudio::ActiveState), "didn't transition to ActiveState after writing audio data");
         } else
             QTest::qWait(20);
     }
@@ -854,8 +844,8 @@ void tst_QAudioOutput::pushSuspendResume()
     QTest::qWait(1000); // 1 seconds should be plenty
 
     QVERIFY2(audioFile->atEnd(), "didn't play to EOF");
-    QVERIFY2((stateSignal.count() == 1),
-             QString("didn't emit IdleState signal when at EOF, got %1 signals instead").arg(stateSignal.count()).toLocal8Bit().constData());
+    QVERIFY(stateSignal.count() > 0);
+    QCOMPARE(qvariant_cast<QAudio::State>(stateSignal.last().at(0)), QAudio::IdleState);
     QVERIFY2((audioOutput.state() == QAudio::IdleState), "didn't transitions to IdleState when at EOF");
     stateSignal.clear();
 

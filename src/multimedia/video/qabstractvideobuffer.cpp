@@ -1,39 +1,31 @@
 /****************************************************************************
 **
-** Copyright (C) 2013 Digia Plc and/or its subsidiary(-ies).
-** Contact: http://www.qt-project.org/legal
+** Copyright (C) 2015 The Qt Company Ltd.
+** Contact: http://www.qt.io/licensing/
 **
 ** This file is part of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL$
+** $QT_BEGIN_LICENSE:LGPL21$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and Digia.  For licensing terms and
-** conditions see http://qt.digia.com/licensing.  For further information
-** use the contact form at http://qt.digia.com/contact-us.
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see http://www.qt.io/terms-conditions. For further
+** information use the contact form at http://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU Lesser General Public License version 2.1 requirements
-** will be met: http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 2.1 or version 3 as published by the Free
+** Software Foundation and appearing in the file LICENSE.LGPLv21 and
+** LICENSE.LGPLv3 included in the packaging of this file. Please review the
+** following information to ensure the GNU Lesser General Public License
+** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
+** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
 **
-** In addition, as a special exception, Digia gives you certain additional
-** rights.  These rights are described in the Digia Qt LGPL Exception
+** As a special exception, The Qt Company gives you certain additional
+** rights. These rights are described in The Qt Company LGPL Exception
 ** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3.0 as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU General Public License version 3.0 requirements will be
-** met: http://www.gnu.org/copyleft/gpl.html.
-**
 **
 ** $QT_END_LICENSE$
 **
@@ -48,17 +40,22 @@
 
 QT_BEGIN_NAMESPACE
 
-namespace
+static void qRegisterAbstractVideoBufferMetaTypes()
 {
-    class QAbstractVideoBufferPrivateRegisterMetaTypes
-    {
-    public:
-        QAbstractVideoBufferPrivateRegisterMetaTypes()
-        {
-            qRegisterMetaType<QAbstractVideoBuffer::HandleType>();
-            qRegisterMetaType<QAbstractVideoBuffer::MapMode>();
-        }
-    } _registerMetaTypes;
+    qRegisterMetaType<QAbstractVideoBuffer::HandleType>();
+    qRegisterMetaType<QAbstractVideoBuffer::MapMode>();
+}
+
+Q_CONSTRUCTOR_FUNCTION(qRegisterAbstractVideoBufferMetaTypes)
+
+int QAbstractVideoBufferPrivate::map(
+            QAbstractVideoBuffer::MapMode mode,
+            int *numBytes,
+            int bytesPerLine[4],
+            uchar *data[4])
+{
+    data[0] = q_ptr->map(mode, numBytes, bytesPerLine);
+    return data[0] ? 1 : 0;
 }
 
 /*!
@@ -78,7 +75,7 @@ namespace
     a new hardware accelerated video system, for example.
 
     The contents of a buffer can be accessed by mapping the buffer to memory using the map()
-    function, which returns a pointer to memory containing the contents of the the video buffer.
+    function, which returns a pointer to memory containing the contents of the video buffer.
     The memory returned by map() is released by calling the unmap() function.
 
     The handle() of a buffer may also be used to manipulate its contents using type specific APIs.
@@ -95,8 +92,9 @@ namespace
     \value NoHandle The buffer has no handle, its data can only be accessed by mapping the buffer.
     \value GLTextureHandle The handle of the buffer is an OpenGL texture ID.
     \value XvShmImageHandle The handle contains pointer to shared memory XVideo image.
-    \value CoreImageHandle The handle contains pointer to Mac OS X CIImage.
+    \value CoreImageHandle The handle contains pointer to \macos CIImage.
     \value QPixmapHandle The handle of the buffer is a QPixmap.
+    \value EGLImageHandle The handle of the buffer is an EGLImageKHR.
     \value UserHandle Start value for user defined handle types.
 
     \sa handleType()
@@ -134,6 +132,7 @@ QAbstractVideoBuffer::QAbstractVideoBuffer(QAbstractVideoBufferPrivate &dd, Hand
     : d_ptr(&dd)
     , m_type(type)
 {
+    d_ptr->q_ptr = this;
 }
 
 /*!
@@ -203,6 +202,44 @@ QAbstractVideoBuffer::HandleType QAbstractVideoBuffer::handleType() const
     \sa unmap(), mapMode()
 */
 
+
+/*!
+    Independently maps the planes of a video buffer to memory.
+
+    The map \a mode indicates whether the contents of the mapped memory should be read from and/or
+    written to the buffer.  If the map mode includes the \c QAbstractVideoBuffer::ReadOnly flag the
+    mapped memory will be populated with the content of the buffer when initially mapped.  If the map
+    mode includes the \c QAbstractVideoBuffer::WriteOnly flag the content of the possibly modified
+    mapped memory will be written back to the buffer when unmapped.
+
+    When access to the data is no longer needed be sure to call the unmap() function to release the
+    mapped memory and possibly update the buffer contents.
+
+    Returns the number of planes in the mapped video data.  For each plane the line stride of that
+    plane will be returned in \a bytesPerLine, and a pointer to the plane data will be returned in
+    \a data.  The accumulative size of the mapped data is returned in \a numBytes.
+
+    Not all buffer implementations will map more than the first plane, if this returns a single
+    plane for a planar format the additional planes will have to be calculated from the line stride
+    of the first plane and the frame height.  Mapping a buffer with QVideoFrame will do this for
+    you.
+
+    To implement this function create a derivative of QAbstractPlanarVideoBuffer and implement
+    its map function instance instead.
+
+    \since 5.4
+*/
+int QAbstractVideoBuffer::mapPlanes(MapMode mode, int *numBytes, int bytesPerLine[4], uchar *data[4])
+{
+    if (d_ptr) {
+        return d_ptr->map(mode, numBytes, bytesPerLine, data);
+    } else {
+        data[0] = map(mode, numBytes, bytesPerLine);
+
+        return data[0] ? 1 : 0;
+    }
+}
+
 /*!
     \fn QAbstractVideoBuffer::unmap()
 
@@ -226,36 +263,124 @@ QVariant QAbstractVideoBuffer::handle() const
     return QVariant();
 }
 
+
+int QAbstractPlanarVideoBufferPrivate::map(
+        QAbstractVideoBuffer::MapMode mode, int *numBytes, int bytesPerLine[4], uchar *data[4])
+{
+    return q_func()->map(mode, numBytes, bytesPerLine, data);
+}
+
+/*!
+    \class QAbstractPlanarVideoBuffer
+    \brief The QAbstractPlanarVideoBuffer class is an abstraction for planar video data.
+    \inmodule QtMultimedia
+    \ingroup QtMultimedia
+    \ingroup multimedia
+    \ingroup multimedia_video
+
+    QAbstractPlanarVideoBuffer extends QAbstractVideoBuffer to support mapping
+    non-continuous planar video data.  Implement this instead of QAbstractVideoBuffer when the
+    abstracted video data stores planes in separate buffers or includes padding between planes
+    which would interfere with calculating offsets from the bytes per line and frame height.
+
+    \sa QAbstractVideoBuffer::mapPlanes()
+    \since 5.4
+*/
+
+/*!
+    Constructs an abstract planar video buffer of the given \a type.
+*/
+QAbstractPlanarVideoBuffer::QAbstractPlanarVideoBuffer(HandleType type)
+    : QAbstractVideoBuffer(*new QAbstractPlanarVideoBufferPrivate, type)
+{
+}
+
+/*!
+    \internal
+*/
+QAbstractPlanarVideoBuffer::QAbstractPlanarVideoBuffer(
+        QAbstractPlanarVideoBufferPrivate &dd, HandleType type)
+    : QAbstractVideoBuffer(dd, type)
+{
+}
+/*!
+    Destroys an abstract planar video buffer.
+*/
+QAbstractPlanarVideoBuffer::~QAbstractPlanarVideoBuffer()
+{
+}
+
+/*!
+    \internal
+*/
+uchar *QAbstractPlanarVideoBuffer::map(MapMode mode, int *numBytes, int *bytesPerLine)
+{
+    uchar *data[4];
+    int strides[4];
+    if (map(mode, numBytes, strides, data) > 0) {
+        if (bytesPerLine)
+            *bytesPerLine = strides[0];
+        return data[0];
+    } else {
+        return 0;
+    }
+}
+
+/*!
+    \fn int QAbstractPlanarVideoBuffer::map(MapMode mode, int *numBytes, int bytesPerLine[4], uchar *data[4])
+
+    Maps the contents of a video buffer to memory.
+
+    The map \a mode indicates whether the contents of the mapped memory should be read from and/or
+    written to the buffer.  If the map mode includes the \c QAbstractVideoBuffer::ReadOnly flag the
+    mapped memory will be populated with the content of the buffer when initially mapped.  If the map
+    mode includes the \c QAbstractVideoBuffer::WriteOnly flag the content of the possibly modified
+    mapped memory will be written back to the buffer when unmapped.
+
+    When access to the data is no longer needed be sure to call the unmap() function to release the
+    mapped memory and possibly update the buffer contents.
+
+    Returns the number of planes in the mapped video data.  For each plane the line stride of that
+    plane will be returned in \a bytesPerLine, and a pointer to the plane data will be returned in
+    \a data.  The accumulative size of the mapped data is returned in \a numBytes.
+
+    \sa QAbstractVideoBuffer::map(), QAbstractVideoBuffer::unmap(), QAbstractVideoBuffer::mapMode()
+*/
+
 #ifndef QT_NO_DEBUG_STREAM
 QDebug operator<<(QDebug dbg, QAbstractVideoBuffer::HandleType type)
 {
+    QDebugStateSaver saver(dbg);
+    dbg.nospace();
     switch (type) {
     case QAbstractVideoBuffer::NoHandle:
-        return dbg.nospace() << "NoHandle";
+        return dbg << "NoHandle";
     case QAbstractVideoBuffer::GLTextureHandle:
-        return dbg.nospace() << "GLTextureHandle";
+        return dbg << "GLTextureHandle";
     case QAbstractVideoBuffer::XvShmImageHandle:
-        return dbg.nospace() << "XvShmImageHandle";
+        return dbg << "XvShmImageHandle";
     case QAbstractVideoBuffer::CoreImageHandle:
-        return dbg.nospace() << "CoreImageHandle";
+        return dbg << "CoreImageHandle";
     case QAbstractVideoBuffer::QPixmapHandle:
-        return dbg.nospace() << "QPixmapHandle";
+        return dbg << "QPixmapHandle";
     default:
-        return dbg.nospace() << QString(QLatin1String("UserHandle(%1)")).arg(int(type)).toLatin1().constData();
+        return dbg << "UserHandle(" << int(type) << ')';
     }
 }
 
 QDebug operator<<(QDebug dbg, QAbstractVideoBuffer::MapMode mode)
 {
+    QDebugStateSaver saver(dbg);
+    dbg.nospace();
     switch (mode) {
     case QAbstractVideoBuffer::ReadOnly:
-        return dbg.nospace() << "ReadOnly";
+        return dbg << "ReadOnly";
     case QAbstractVideoBuffer::ReadWrite:
-        return dbg.nospace() << "ReadWrite";
+        return dbg << "ReadWrite";
     case QAbstractVideoBuffer::WriteOnly:
-        return dbg.nospace() << "WriteOnly";
+        return dbg << "WriteOnly";
     default:
-        return dbg.nospace() << "NotMapped";
+        return dbg << "NotMapped";
     }
 }
 #endif

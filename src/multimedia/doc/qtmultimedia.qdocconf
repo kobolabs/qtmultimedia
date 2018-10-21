@@ -2,7 +2,6 @@ include($QT_INSTALL_DOCS/global/qt-module-defaults.qdocconf)
 
 project                 = QtMultimedia
 description             = Qt Multimedia Documentation
-url                     = http://qt-project.org/doc/qt-$QT_VER
 version                 = $QT_VERSION
 
 # The following parameters are for creating a qhp file, the qhelpgenerator
@@ -19,21 +18,30 @@ qhp.QtMultimedia.indexTitle = Qt Multimedia
 qhp.QtMultimedia.virtualFolder  = qtmultimedia
 
 # For listing child nodes in Qt Creator or Assistant.
-qhp.QtMultimedia.subprojects = classes qmltypes
-qhp.QtMultimedia.subprojects.classes.title = C++ Classes
+qhp.QtMultimedia.subprojects = classes widgetclasses qmltypes examples
+
+qhp.QtMultimedia.subprojects.classes.title = Qt Multimedia Classes and Namespaces
 qhp.QtMultimedia.subprojects.classes.indexTitle = Qt Multimedia C++ Classes
-qhp.QtMultimedia.subprojects.classes.selectors = class fake:headerfile
+qhp.QtMultimedia.subprojects.classes.selectors = module:QtMultimedia
 qhp.QtMultimedia.subprojects.classes.sortPages = true
+
+qhp.QtMultimedia.subprojects.widgetclasses.title = Qt Multimedia Widgets C++ Classes
+qhp.QtMultimedia.subprojects.widgetclasses.indexTitle = Qt Multimedia Widgets C++ Classes
+qhp.QtMultimedia.subprojects.widgetclasses.selectors = module:QtMultimediaWidgets
+qhp.QtMultimedia.subprojects.widgetclasses.sortPages = true
+
 qhp.QtMultimedia.subprojects.qmltypes.title = QML Types
 qhp.QtMultimedia.subprojects.qmltypes.indexTitle = Qt Multimedia QML Types
-qhp.QtMultimedia.subprojects.qmltypes.selectors = fake:qmlclass
+qhp.QtMultimedia.subprojects.qmltypes.selectors = qmlclass
 qhp.QtMultimedia.subprojects.qmltypes.sortPages = true
 
-exampledirs += ../../../examples/multimedia \
-               snippets
+qhp.QtMultimedia.subprojects.examples.title = Examples
+qhp.QtMultimedia.subprojects.examples.indexTitle = Qt Multimedia Examples
+qhp.QtMultimedia.subprojects.examples.selectors = doc:example
+qhp.QtMultimedia.subprojects.examples.sortPages = true
 
-# Specify example install dir under QT_INSTALL_EXAMPLES
-examplesinstallpath = multimedia
+exampledirs += ../../../examples \
+               snippets
 
 headerdirs += ../..
 
@@ -41,9 +49,9 @@ imagedirs += src/images \
 
 sourcedirs += ../..
 
-excludedirs += ../../multimediawidgets
+#excludedirs += ../../multimediawidgets
 
-depends                 += qtcore qtdoc qtquick qtqml qtmultimediawidgets
+depends                 += qtcore qtdoc qtgui qtquick qtqml qtwidgets
 
 navigation.landingpage = "Qt Multimedia"
 navigation.cppclassespage = "Qt Multimedia C++ Classes"

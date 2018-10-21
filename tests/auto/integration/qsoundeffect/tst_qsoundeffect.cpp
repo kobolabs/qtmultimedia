@@ -1,39 +1,31 @@
 /****************************************************************************
 **
-** Copyright (C) 2013 Digia Plc and/or its subsidiary(-ies).
-** Contact: http://www.qt-project.org/legal
+** Copyright (C) 2015 The Qt Company Ltd.
+** Contact: http://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL$
+** $QT_BEGIN_LICENSE:LGPL21$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and Digia.  For licensing terms and
-** conditions see http://qt.digia.com/licensing.  For further information
-** use the contact form at http://qt.digia.com/contact-us.
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see http://www.qt.io/terms-conditions. For further
+** information use the contact form at http://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU Lesser General Public License version 2.1 requirements
-** will be met: http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 2.1 or version 3 as published by the Free
+** Software Foundation and appearing in the file LICENSE.LGPLv21 and
+** LICENSE.LGPLv3 included in the packaging of this file. Please review the
+** following information to ensure the GNU Lesser General Public License
+** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
+** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
 **
-** In addition, as a special exception, Digia gives you certain additional
-** rights.  These rights are described in the Digia Qt LGPL Exception
+** As a special exception, The Qt Company gives you certain additional
+** rights. These rights are described in The Qt Company LGPL Exception
 ** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3.0 as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU General Public License version 3.0 requirements will be
-** met: http://www.gnu.org/copyleft/gpl.html.
-**
 **
 ** $QT_END_LICENSE$
 **
@@ -152,16 +144,84 @@ void tst_QSoundEffect::testLooping()
 
     sound->setLoopCount(5);
     sound->setVolume(0.1f);
-    QCOMPARE(sound->loopCount(),5);
-    QCOMPARE(readSignal_Count.count(),1);
+    QCOMPARE(sound->loopCount(), 5);
+    QCOMPARE(readSignal_Count.count(), 1);
+    QCOMPARE(sound->loopsRemaining(), 0);
+    QCOMPARE(readSignal_Remaining.count(), 0);
 
     sound->play();
+    QVERIFY(readSignal_Remaining.count() > 0);
 
     // test.wav is about 200ms, wait until it has finished playing 5 times
     QTestEventLoop::instance().enterLoop(3);
 
     QTRY_COMPARE(sound->loopsRemaining(), 0);
-    QCOMPARE(readSignal_Remaining.count(),5);
+    QVERIFY(readSignal_Remaining.count() >= 6);
+    QTRY_VERIFY(!sound->isPlaying());
+
+    // QTBUG-36643 (setting the loop count while playing should work)
+    {
+        readSignal_Count.clear();
+        readSignal_Remaining.clear();
+
+        sound->setLoopCount(30);
+        QCOMPARE(sound->loopCount(), 30);
+        QCOMPARE(readSignal_Count.count(), 1);
+        QCOMPARE(sound->loopsRemaining(), 0);
+        QCOMPARE(readSignal_Remaining.count(), 0);
+
+        sound->play();
+        QVERIFY(readSignal_Remaining.count() > 0);
+
+        // wait for the sound to be played several times
+        QTRY_VERIFY(sound->loopsRemaining() <= 20);
+        QVERIFY(readSignal_Remaining.count() >= 10);
+        readSignal_Count.clear();
+        readSignal_Remaining.clear();
+
+        // change the loop count while playing
+        sound->setLoopCount(5);
+        QCOMPARE(sound->loopCount(), 5);
+        QCOMPARE(readSignal_Count.count(), 1);
+        QCOMPARE(sound->loopsRemaining(), 5);
+        QCOMPARE(readSignal_Remaining.count(), 1);
+
+        // wait for all the loops to be completed
+        QTRY_COMPARE(sound->loopsRemaining(), 0);
+        QTRY_VERIFY(readSignal_Remaining.count() >= 6);
+        QTRY_VERIFY(!sound->isPlaying());
+    }
+
+    {
+        readSignal_Count.clear();
+        readSignal_Remaining.clear();
+
+        sound->setLoopCount(QSoundEffect::Infinite);
+        QCOMPARE(sound->loopCount(), int(QSoundEffect::Infinite));
+        QCOMPARE(readSignal_Count.count(), 1);
+        QCOMPARE(sound->loopsRemaining(), 0);
+        QCOMPARE(readSignal_Remaining.count(), 0);
+
+        sound->play();
+        QTRY_COMPARE(sound->loopsRemaining(), int(QSoundEffect::Infinite));
+        QCOMPARE(readSignal_Remaining.count(), 1);
+
+        QTest::qWait(1500);
+        QVERIFY(sound->isPlaying());
+        readSignal_Count.clear();
+        readSignal_Remaining.clear();
+
+        // Setting the loop count to 0 should play it one last time
+        sound->setLoopCount(0);
+        QCOMPARE(sound->loopCount(), 1);
+        QCOMPARE(readSignal_Count.count(), 1);
+        QCOMPARE(sound->loopsRemaining(), 1);
+        QCOMPARE(readSignal_Remaining.count(), 1);
+
+        QTRY_COMPARE(sound->loopsRemaining(), 0);
+        QTRY_VERIFY(readSignal_Remaining.count() >= 2);
+        QTRY_VERIFY(!sound->isPlaying());
+    }
 }
 
 void tst_QSoundEffect::testVolume()

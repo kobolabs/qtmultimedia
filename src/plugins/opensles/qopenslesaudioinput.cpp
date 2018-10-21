@@ -1,39 +1,31 @@
 /****************************************************************************
 **
-** Copyright (C) 2013 Digia Plc and/or its subsidiary(-ies).
-** Contact: http://www.qt-project.org/legal
+** Copyright (C) 2015 The Qt Company Ltd.
+** Contact: http://www.qt.io/licensing/
 **
 ** This file is part of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL$
+** $QT_BEGIN_LICENSE:LGPL21$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and Digia.  For licensing terms and
-** conditions see http://qt.digia.com/licensing.  For further information
-** use the contact form at http://qt.digia.com/contact-us.
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see http://www.qt.io/terms-conditions. For further
+** information use the contact form at http://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU Lesser General Public License version 2.1 requirements
-** will be met: http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 2.1 or version 3 as published by the Free
+** Software Foundation and appearing in the file LICENSE.LGPLv21 and
+** LICENSE.LGPLv3 included in the packaging of this file. Please review the
+** following information to ensure the GNU Lesser General Public License
+** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
+** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
 **
-** In addition, as a special exception, Digia gives you certain additional
-** rights.  These rights are described in the Digia Qt LGPL Exception
+** As a special exception, The Qt Company gives you certain additional
+** rights. These rights are described in The Qt Company LGPL Exception
 ** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3.0 as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU General Public License version 3.0 requirements will be
-** met: http://www.gnu.org/copyleft/gpl.html.
-**
 **
 ** $QT_END_LICENSE$
 **
@@ -43,6 +35,7 @@
 
 #include "qopenslesengine.h"
 #include <qbuffer.h>
+#include <private/qaudiohelpers_p.h>
 #include <qdebug.h>
 
 #ifdef ANDROID
@@ -78,7 +71,7 @@ QOpenSLESAudioInput::QOpenSLESAudioInput(const QByteArray &device)
     , m_errorState(QAudio::NoError)
     , m_deviceState(QAudio::StoppedState)
     , m_lastNotifyTime(0)
-    , m_volume(1)
+    , m_volume(1.0)
     , m_bufferSize(0)
     , m_periodSize(0)
     , m_intervalTime(1000)
@@ -404,9 +397,19 @@ void QOpenSLESAudioInput::writeDataToDevice(const char *data, int size)
 {
     m_processedBytes += size;
 
+    QByteArray outData;
+
+    // Apply volume
+    if (m_volume < 1.0f) {
+        outData.resize(size);
+        QAudioHelperInternal::qMultiplySamples(m_volume, m_format, data, outData.data(), size);
+    } else {
+        outData.append(data, size);
+    }
+
     if (m_pullMode) {
         // write buffer to the QIODevice
-        if (m_audioSource->write(data, size) < 0) {
+        if (m_audioSource->write(outData) < 0) {
             stop();
             m_errorState = QAudio::IOError;
             Q_EMIT errorChanged(m_errorState);
@@ -414,7 +417,7 @@ void QOpenSLESAudioInput::writeDataToDevice(const char *data, int size)
     } else {
         // emits readyRead() so user will call read() on QIODevice to get some audio data
         if (m_bufferIODevice != 0) {
-            m_pushBuffer.append(data, size);
+            m_pushBuffer.append(outData);
             Q_EMIT m_bufferIODevice->readyRead();
         }
     }
@@ -482,12 +485,11 @@ qint64 QOpenSLESAudioInput::elapsedUSecs() const
     if (m_deviceState == QAudio::StoppedState)
         return 0;
 
-    return m_clockStamp.elapsed() * 1000;
+    return m_clockStamp.elapsed() * qint64(1000);
 }
 
 void QOpenSLESAudioInput::setVolume(qreal vol)
 {
-    // Volume interface is not available for the recorder on Android
     m_volume = vol;
 }
 

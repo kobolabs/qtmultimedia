@@ -1,9 +1,5 @@
 TARGET = gstmediacapture
 
-PLUGIN_TYPE = mediaservice
-PLUGIN_CLASS_NAME = QGstreamerCaptureServicePlugin
-load(qt_plugin)
-
 include(../common.pri)
 
 INCLUDEPATH += $$PWD
@@ -15,7 +11,6 @@ HEADERS += $$PWD/qgstreamercaptureservice.h \
     $$PWD/qgstreamerrecordercontrol.h \
     $$PWD/qgstreamermediacontainercontrol.h \
     $$PWD/qgstreamercameracontrol.h \
-    $$PWD/qgstreamerv4l2input.h \
     $$PWD/qgstreamercapturemetadatacontrol.h \
     $$PWD/qgstreamerimagecapturecontrol.h \
     $$PWD/qgstreamerimageencode.h \
@@ -28,7 +23,6 @@ SOURCES += $$PWD/qgstreamercaptureservice.cpp \
     $$PWD/qgstreamerrecordercontrol.cpp \
     $$PWD/qgstreamermediacontainercontrol.cpp \
     $$PWD/qgstreamercameracontrol.cpp \
-    $$PWD/qgstreamerv4l2input.cpp \
     $$PWD/qgstreamercapturemetadatacontrol.cpp \
     $$PWD/qgstreamerimagecapturecontrol.cpp \
     $$PWD/qgstreamerimageencode.cpp \
@@ -37,13 +31,22 @@ SOURCES += $$PWD/qgstreamercaptureservice.cpp \
 # Camera usage with gstreamer needs to have
 #CONFIG += use_gstreamer_camera
 
-use_gstreamer_camera {
-DEFINES += USE_GSTREAMER_CAMERA
+use_gstreamer_camera:config_linux_v4l {
+    DEFINES += USE_GSTREAMER_CAMERA
 
-OTHER_FILES += \
-    mediacapturecamera.json
+    OTHER_FILES += \
+        mediacapturecamera.json
+
+    HEADERS += \
+        $$PWD/qgstreamerv4l2input.h
+    SOURCES += \
+        $$PWD/qgstreamerv4l2input.cpp
+
 } else {
-OTHER_FILES += \
-    mediacapture.json
+    OTHER_FILES += \
+        mediacapture.json
 }
 
+PLUGIN_TYPE = mediaservice
+PLUGIN_CLASS_NAME = QGstreamerCaptureServicePlugin
+load(qt_plugin)

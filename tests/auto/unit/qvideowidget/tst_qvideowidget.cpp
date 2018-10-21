@@ -1,39 +1,31 @@
 /****************************************************************************
 **
-** Copyright (C) 2013 Digia Plc and/or its subsidiary(-ies).
-** Contact: http://www.qt-project.org/legal
+** Copyright (C) 2015 The Qt Company Ltd.
+** Contact: http://www.qt.io/licensing/
 **
 ** This file is part of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL$
+** $QT_BEGIN_LICENSE:LGPL21$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and Digia.  For licensing terms and
-** conditions see http://qt.digia.com/licensing.  For further information
-** use the contact form at http://qt.digia.com/contact-us.
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see http://www.qt.io/terms-conditions. For further
+** information use the contact form at http://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU Lesser General Public License version 2.1 requirements
-** will be met: http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 2.1 or version 3 as published by the Free
+** Software Foundation and appearing in the file LICENSE.LGPLv21 and
+** LICENSE.LGPLv3 included in the packaging of this file. Please review the
+** following information to ensure the GNU Lesser General Public License
+** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
+** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
 **
-** In addition, as a special exception, Digia gives you certain additional
-** rights.  These rights are described in the Digia Qt LGPL Exception
+** As a special exception, The Qt Company gives you certain additional
+** rights. These rights are described in The Qt Company LGPL Exception
 ** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3.0 as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU General Public License version 3.0 requirements will be
-** met: http://www.gnu.org/copyleft/gpl.html.
-**
 **
 ** $QT_END_LICENSE$
 **
@@ -121,6 +113,17 @@ private:
 
 Q_DECLARE_METATYPE(Qt::AspectRatioMode)
 Q_DECLARE_METATYPE(const uchar *)
+
+class QtTestVideoWidget : public QVideoWidget
+{
+public:
+    QtTestVideoWidget(QWidget *parent = 0)
+        : QVideoWidget(parent)
+    {
+        setWindowFlags(Qt::X11BypassWindowManagerHint);
+        resize(320, 240);
+    }
+};
 
 class QtTestWindowControl : public QVideoWindowControl
 {
@@ -347,8 +350,7 @@ public:
 
 void tst_QVideoWidget::nullObject()
 {
-    QVideoWidget widget;
-    widget.setWindowFlags(Qt::X11BypassWindowManagerHint);
+    QtTestVideoWidget widget;
 
     QVERIFY(widget.sizeHint().isEmpty());
 
@@ -433,10 +435,8 @@ void tst_QVideoWidget::nullService()
 {
     QtTestVideoObject object(0);
 
-    QVideoWidget widget;
+    QtTestVideoWidget widget;
     object.bind(&widget);
-
-    widget.setWindowFlags(Qt::X11BypassWindowManagerHint);
 
     QVERIFY(widget.sizeHint().isEmpty());
 
@@ -467,9 +467,8 @@ void tst_QVideoWidget::noOutputs()
 {
     QtTestVideoObject object(0, 0, 0);
 
-    QVideoWidget widget;
+    QtTestVideoWidget widget;
     object.bind(&widget);
-    widget.setWindowFlags(Qt::X11BypassWindowManagerHint);
 
     QVERIFY(widget.sizeHint().isEmpty());
 
@@ -497,9 +496,8 @@ void tst_QVideoWidget::serviceDestroyed()
 
     QtTestVideoObject object(new QtTestWindowControl, new QtTestWidgetControl, 0);
 
-    QVideoWidget widget;
+    QtTestVideoWidget widget;
     object.bind(&widget);
-    widget.setWindowFlags(Qt::X11BypassWindowManagerHint);
 
     widget.show();
     QVERIFY(QTest::qWaitForWindowExposed(&widget));
@@ -534,16 +532,14 @@ void tst_QVideoWidget::objectDestroyed()
             new QtTestWidgetControl,
             0);
 
-    QVideoWidget widget;
+    QtTestVideoWidget widget;
     object->bind(&widget);
-    widget.setWindowFlags(Qt::X11BypassWindowManagerHint);
 
     QCOMPARE(object->testService->windowRef, 0);
     QCOMPARE(object->testService->widgetRef, 1);
     QCOMPARE(object->testService->rendererRef, 0);
 
     widget.show();
-    QVERIFY(QTest::qWaitForWindowExposed(&widget));
 
     widget.setBrightness(100);
     widget.setContrast(100);
@@ -577,8 +573,7 @@ void tst_QVideoWidget::setMediaObject()
     QtTestVideoObject widgetObject(0, new QtTestWidgetControl, 0);
     QtTestVideoObject rendererObject(0, 0, new QtTestRendererControl);
 
-    QVideoWidget widget;
-    widget.setWindowFlags(Qt::X11BypassWindowManagerHint);
+    QtTestVideoWidget widget;
 
     widget.show();
     QVERIFY(QTest::qWaitForWindowExposed(&widget));
@@ -630,9 +625,8 @@ void tst_QVideoWidget::showWindowControl()
     QtTestVideoObject object(new QtTestWindowControl, 0, 0);
     object.testService->windowControl->setNativeSize(QSize(240, 180));
 
-    QVideoWidget widget;
+    QtTestVideoWidget widget;
     object.bind(&widget);
-    widget.setWindowFlags(Qt::X11BypassWindowManagerHint);
 
     widget.show();
     QVERIFY(QTest::qWaitForWindowExposed(&widget));
@@ -656,9 +650,8 @@ void tst_QVideoWidget::showWidgetControl()
 #endif
 
     QtTestVideoObject object(0, new QtTestWidgetControl, 0);
-    QVideoWidget widget;
+    QtTestVideoWidget widget;
     object.bind(&widget);
-    widget.setWindowFlags(Qt::X11BypassWindowManagerHint);
 
     widget.show();
     QVERIFY(QTest::qWaitForWindowExposed(&widget));
@@ -680,9 +673,8 @@ void tst_QVideoWidget::showRendererControl()
 #endif
 
     QtTestVideoObject object(0, 0, new QtTestRendererControl);
-    QVideoWidget widget;
+    QtTestVideoWidget widget;
     object.bind(&widget);
-    widget.setWindowFlags(Qt::X11BypassWindowManagerHint);
 
     widget.show();
     QVERIFY(QTest::qWaitForWindowExposed(&widget));
@@ -701,9 +693,8 @@ void tst_QVideoWidget::aspectRatioWindowControl()
     QtTestVideoObject object(new QtTestWindowControl, 0, 0);
     object.testService->windowControl->setAspectRatioMode(Qt::IgnoreAspectRatio);
 
-    QVideoWidget widget;
+    QtTestVideoWidget widget;
     object.bind(&widget);
-    widget.setWindowFlags(Qt::X11BypassWindowManagerHint);
 
     // Test the aspect ratio defaults to keeping the aspect ratio.
     QCOMPARE(widget.aspectRatioMode(), Qt::KeepAspectRatio);
@@ -737,9 +728,8 @@ void tst_QVideoWidget::aspectRatioWidgetControl()
     QtTestVideoObject object(0, new QtTestWidgetControl, 0);
     object.testService->widgetControl->setAspectRatioMode(Qt::IgnoreAspectRatio);
 
-    QVideoWidget widget;
+    QtTestVideoWidget widget;
     object.bind(&widget);
-    widget.setWindowFlags(Qt::X11BypassWindowManagerHint);
 
     // Test the aspect ratio defaults to keeping the aspect ratio.
     QCOMPARE(widget.aspectRatioMode(), Qt::KeepAspectRatio);
@@ -772,9 +762,8 @@ void tst_QVideoWidget::aspectRatioRendererControl()
 
     QtTestVideoObject object(0, 0, new QtTestRendererControl);
 
-    QVideoWidget widget;
+    QtTestVideoWidget widget;
     object.bind(&widget);
-    widget.setWindowFlags(Qt::X11BypassWindowManagerHint);
 
     // Test the aspect ratio defaults to keeping the aspect ratio.
     QCOMPARE(widget.aspectRatioMode(), Qt::KeepAspectRatio);
@@ -799,7 +788,7 @@ void tst_QVideoWidget::aspectRatioRendererControl()
 void tst_QVideoWidget::sizeHint_data()
 {
     QTest::addColumn<QSize>("size");
-    
+
     QTest::newRow("720x576")
             << QSize(720, 576);
 }
@@ -809,9 +798,8 @@ void tst_QVideoWidget::sizeHintWindowControl()
     QFETCH(QSize, size);
 
     QtTestVideoObject object(new QtTestWindowControl, 0, 0);
-    QVideoWidget widget;
+    QtTestVideoWidget widget;
     object.bind(&widget);
-    widget.setWindowFlags(Qt::X11BypassWindowManagerHint);
     widget.show();
     QVERIFY(QTest::qWaitForWindowExposed(&widget));
 
@@ -830,9 +818,8 @@ void tst_QVideoWidget::sizeHintWidgetControl()
     QFETCH(QSize, size);
 
     QtTestVideoObject object(0, new QtTestWidgetControl, 0);
-    QVideoWidget widget;
+    QtTestVideoWidget widget;
     object.bind(&widget);
-    widget.setWindowFlags(Qt::X11BypassWindowManagerHint);
     widget.show();
     QVERIFY(QTest::qWaitForWindowExposed(&widget));
 
@@ -885,9 +872,8 @@ void tst_QVideoWidget::sizeHintRendererControl()
     QFETCH(QSize, expectedSize);
 
     QtTestVideoObject object(0, 0, new QtTestRendererControl);
-    QVideoWidget widget;
+    QtTestVideoWidget widget;
     object.bind(&widget);
-    widget.setWindowFlags(Qt::X11BypassWindowManagerHint);
 
     widget.show();
     QVERIFY(QTest::qWaitForWindowExposed(&widget));
@@ -905,9 +891,9 @@ void tst_QVideoWidget::sizeHintRendererControl()
 void tst_QVideoWidget::fullScreenWindowControl()
 {
     QtTestVideoObject object(new QtTestWindowControl, 0, 0);
-    QVideoWidget widget;
+    QtTestVideoWidget widget;
     object.bind(&widget);
-    widget.show();
+    widget.showNormal();
     QVERIFY(QTest::qWaitForWindowExposed(&widget));
 
     Qt::WindowFlags windowFlags = widget.windowFlags();
@@ -990,9 +976,9 @@ void tst_QVideoWidget::fullScreenWidgetControl()
 #endif
 
     QtTestVideoObject object(0, new QtTestWidgetControl, 0);
-    QVideoWidget widget;
+    QtTestVideoWidget widget;
     object.bind(&widget);
-    widget.show();
+    widget.showNormal();
     QVERIFY(QTest::qWaitForWindowExposed(&widget));
 
     Qt::WindowFlags windowFlags = widget.windowFlags();
@@ -1076,9 +1062,9 @@ void tst_QVideoWidget::fullScreenRendererControl()
 #endif
 
     QtTestVideoObject object(0, 0, new QtTestRendererControl);
-    QVideoWidget widget;
+    QtTestVideoWidget widget;
     object.bind(&widget);
-    widget.show();
+    widget.showNormal();
     QVERIFY(QTest::qWaitForWindowExposed(&widget));
 
     Qt::WindowFlags windowFlags = widget.windowFlags();
@@ -1172,9 +1158,8 @@ void tst_QVideoWidget::brightnessWindowControl()
     QtTestVideoObject object(new QtTestWindowControl, 0, 0);
     object.testService->windowControl->setBrightness(controlValue);
 
-    QVideoWidget widget;
+    QtTestVideoWidget widget;
     object.bind(&widget);
-    widget.setWindowFlags(Qt::X11BypassWindowManagerHint);
     widget.show();
     QVERIFY(QTest::qWaitForWindowExposed(&widget));
 
@@ -1217,9 +1202,8 @@ void tst_QVideoWidget::brightnessWidgetControl()
     QtTestVideoObject object(0, new QtTestWidgetControl, 0);
     object.testService->widgetControl->setBrightness(controlValue);
 
-    QVideoWidget widget;
+    QtTestVideoWidget widget;
     object.bind(&widget);
-    widget.setWindowFlags(Qt::X11BypassWindowManagerHint);
 
     QCOMPARE(widget.brightness(), 0);
 
@@ -1256,9 +1240,8 @@ void tst_QVideoWidget::brightnessRendererControl()
 
     QtTestVideoObject object(0, 0, new QtTestRendererControl);
 
-    QVideoWidget widget;
+    QtTestVideoWidget widget;
     object.bind(&widget);
-    widget.setWindowFlags(Qt::X11BypassWindowManagerHint);
     widget.show();
     QVERIFY(QTest::qWaitForWindowExposed(&widget));
 
@@ -1283,9 +1266,8 @@ void tst_QVideoWidget::contrastWindowControl()
     QtTestVideoObject object(new QtTestWindowControl, 0, 0);
     object.testService->windowControl->setContrast(controlValue);
 
-    QVideoWidget widget;
+    QtTestVideoWidget widget;
     object.bind(&widget);
-    widget.setWindowFlags(Qt::X11BypassWindowManagerHint);
 
     QCOMPARE(widget.contrast(), 0);
 
@@ -1325,9 +1307,8 @@ void tst_QVideoWidget::contrastWidgetControl()
     QtTestVideoObject object(0, new QtTestWidgetControl, 0);
     object.testService->widgetControl->setContrast(controlValue);
 
-    QVideoWidget widget;
+    QtTestVideoWidget widget;
     object.bind(&widget);
-    widget.setWindowFlags(Qt::X11BypassWindowManagerHint);
     QCOMPARE(widget.contrast(), 0);
 
     widget.show();
@@ -1364,9 +1345,8 @@ void tst_QVideoWidget::contrastRendererControl()
 
     QtTestVideoObject object(0, 0, new QtTestRendererControl);
 
-    QVideoWidget widget;
+    QtTestVideoWidget widget;
     object.bind(&widget);
-    widget.setWindowFlags(Qt::X11BypassWindowManagerHint);
     widget.show();
     QVERIFY(QTest::qWaitForWindowExposed(&widget));
 
@@ -1391,9 +1371,8 @@ void tst_QVideoWidget::hueWindowControl()
     QtTestVideoObject object(new QtTestWindowControl, 0, 0);
     object.testService->windowControl->setHue(controlValue);
 
-    QVideoWidget widget;
+    QtTestVideoWidget widget;
     object.bind(&widget);
-    widget.setWindowFlags(Qt::X11BypassWindowManagerHint);
     QCOMPARE(widget.hue(), 0);
 
     widget.show();
@@ -1432,9 +1411,8 @@ void tst_QVideoWidget::hueWidgetControl()
     QtTestVideoObject object(0, new QtTestWidgetControl, 0);
     object.testService->widgetControl->setHue(controlValue);
 
-    QVideoWidget widget;
+    QtTestVideoWidget widget;
     object.bind(&widget);
-    widget.setWindowFlags(Qt::X11BypassWindowManagerHint);
     QCOMPARE(widget.hue(), 0);
 
     widget.show();
@@ -1471,9 +1449,8 @@ void tst_QVideoWidget::hueRendererControl()
 
     QtTestVideoObject object(0, 0, new QtTestRendererControl);
 
-    QVideoWidget widget;
+    QtTestVideoWidget widget;
     object.bind(&widget);
-    widget.setWindowFlags(Qt::X11BypassWindowManagerHint);
     widget.show();
     QVERIFY(QTest::qWaitForWindowExposed(&widget));
 
@@ -1498,9 +1475,8 @@ void tst_QVideoWidget::saturationWindowControl()
     QtTestVideoObject object(new QtTestWindowControl, 0, 0);
     object.testService->windowControl->setSaturation(controlValue);
 
-    QVideoWidget widget;
+    QtTestVideoWidget widget;
     object.bind(&widget);
-    widget.setWindowFlags(Qt::X11BypassWindowManagerHint);
     QCOMPARE(widget.saturation(), 0);
     widget.show();
     QVERIFY(QTest::qWaitForWindowExposed(&widget));
@@ -1538,9 +1514,8 @@ void tst_QVideoWidget::saturationWidgetControl()
     QtTestVideoObject object(0, new QtTestWidgetControl, 0);
     object.testService->widgetControl->setSaturation(controlValue);
 
-    QVideoWidget widget;
+    QtTestVideoWidget widget;
     object.bind(&widget);
-    widget.setWindowFlags(Qt::X11BypassWindowManagerHint);
 
     QCOMPARE(widget.saturation(), 0);
     widget.show();
@@ -1578,9 +1553,8 @@ void tst_QVideoWidget::saturationRendererControl()
 
     QtTestVideoObject object(0, 0, new QtTestRendererControl);
 
-    QVideoWidget widget;
+    QtTestVideoWidget widget;
     object.bind(&widget);
-    widget.setWindowFlags(Qt::X11BypassWindowManagerHint);
     widget.show();
     QVERIFY(QTest::qWaitForWindowExposed(&widget));
     QSignalSpy spy(&widget, SIGNAL(saturationChanged(int)));
@@ -1605,9 +1579,8 @@ void tst_QVideoWidget::paintRendererControl()
 {
     QtTestVideoObject object(0, 0, new QtTestRendererControl);
 
-    QVideoWidget widget;
+    QtTestVideoWidget widget;
     object.bind(&widget);
-    widget.setWindowFlags(Qt::X11BypassWindowManagerHint);
     widget.resize(640,480);
     widget.show();
     QVERIFY(QTest::qWaitForWindowExposed(&widget));

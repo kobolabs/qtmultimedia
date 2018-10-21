@@ -1,39 +1,31 @@
 /****************************************************************************
 **
-** Copyright (C) 2013 Digia Plc and/or its subsidiary(-ies).
-** Contact: http://www.qt-project.org/legal
+** Copyright (C) 2015 The Qt Company Ltd.
+** Contact: http://www.qt.io/licensing/
 **
 ** This file is part of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL$
+** $QT_BEGIN_LICENSE:LGPL21$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and Digia.  For licensing terms and
-** conditions see http://qt.digia.com/licensing.  For further information
-** use the contact form at http://qt.digia.com/contact-us.
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see http://www.qt.io/terms-conditions. For further
+** information use the contact form at http://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU Lesser General Public License version 2.1 requirements
-** will be met: http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 2.1 or version 3 as published by the Free
+** Software Foundation and appearing in the file LICENSE.LGPLv21 and
+** LICENSE.LGPLv3 included in the packaging of this file. Please review the
+** following information to ensure the GNU Lesser General Public License
+** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
+** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
 **
-** In addition, as a special exception, Digia gives you certain additional
-** rights.  These rights are described in the Digia Qt LGPL Exception
+** As a special exception, The Qt Company gives you certain additional
+** rights. These rights are described in The Qt Company LGPL Exception
 ** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3.0 as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU General Public License version 3.0 requirements will be
-** met: http://www.gnu.org/copyleft/gpl.html.
-**
 **
 ** $QT_END_LICENSE$
 **
@@ -53,9 +45,6 @@
 #include "qsoundeffect_qaudio_p.h"
 
 #include <QtCore/qcoreapplication.h>
-#include <QtCore/qthread.h>
-#include <QtCore/qmutex.h>
-#include <QtCore/qwaitcondition.h>
 #include <QtCore/qiodevice.h>
 
 //#include <QDebug>
@@ -172,23 +161,24 @@ void QSoundEffectPrivate::setLoopCount(int loopCount)
     if (loopCount == 0)
         loopCount = 1;
     d->m_loopCount = loopCount;
-    d->m_runningCount = loopCount;
+    if (d->m_playing)
+        setLoopsRemaining(loopCount);
 }
 
-int QSoundEffectPrivate::volume() const
+qreal QSoundEffectPrivate::volume() const
 {
     if (d->m_audioOutput && !d->m_muted)
-        return d->m_audioOutput->volume()*100.0f;
+        return d->m_audioOutput->volume();
 
     return d->m_volume;
 }
 
-void QSoundEffectPrivate::setVolume(int volume)
+void QSoundEffectPrivate::setVolume(qreal volume)
 {
     d->m_volume = volume;
 
     if (d->m_audioOutput && !d->m_muted)
-        d->m_audioOutput->setVolume(volume/100.0f);
+        d->m_audioOutput->setVolume(volume);
 
     emit volumeChanged();
 }
@@ -203,7 +193,7 @@ void QSoundEffectPrivate::setMuted(bool muted)
     if (muted && d->m_audioOutput)
         d->m_audioOutput->setVolume(0);
     else if (!muted && d->m_audioOutput && d->m_muted)
-        d->m_audioOutput->setVolume(d->m_volume/100.0f);
+        d->m_audioOutput->setVolume(d->m_volume);
 
     d->m_muted = muted;
     emit mutedChanged();
@@ -228,7 +218,7 @@ QSoundEffect::Status QSoundEffectPrivate::status() const
 void QSoundEffectPrivate::play()
 {
     d->m_offset = 0;
-    d->m_runningCount = d->m_loopCount;
+    setLoopsRemaining(d->m_loopCount);
 #ifdef QT_QAUDIO_DEBUG
     qDebug() << this << "play";
 #endif
@@ -283,7 +273,7 @@ void QSoundEffectPrivate::setPlaying(bool playing)
 
 void QSoundEffectPrivate::setLoopsRemaining(int loopsRemaining)
 {
-    if (!d->m_runningCount && loopsRemaining)
+    if (d->m_runningCount == loopsRemaining)
         return;
 #ifdef QT_QAUDIO_DEBUG
     qDebug() << this << "setLoopsRemaining " << loopsRemaining;
@@ -307,6 +297,7 @@ void QSoundEffectPrivate::setCategory(const QString &category)
 }
 
 PrivateSoundSource::PrivateSoundSource(QSoundEffectPrivate* s):
+    QIODevice(s),
     m_loopCount(1),
     m_runningCount(0),
     m_playing(false),
@@ -314,7 +305,7 @@ PrivateSoundSource::PrivateSoundSource(QSoundEffectPrivate* s):
     m_audioOutput(0),
     m_sample(0),
     m_muted(false),
-    m_volume(100),
+    m_volume(1.0),
     m_sampleReady(false),
     m_offset(0)
 {
@@ -337,7 +328,7 @@ void PrivateSoundSource::sampleReady()
         m_audioOutput = new QAudioOutput(m_sample->format());
         connect(m_audioOutput,SIGNAL(stateChanged(QAudio::State)), this, SLOT(stateChanged(QAudio::State)));
         if (!m_muted)
-            m_audioOutput->setVolume(m_volume/100.0f);
+            m_audioOutput->setVolume(m_volume);
         else
             m_audioOutput->setVolume(0);
     }
@@ -362,7 +353,8 @@ void PrivateSoundSource::stateChanged(QAudio::State state)
 #ifdef QT_QAUDIO_DEBUG
     qDebug() << this << "stateChanged " << state;
 #endif
-    if (state == QAudio::IdleState && m_runningCount == 0)
+    if ((state == QAudio::IdleState && m_runningCount == 0)
+         || (state == QAudio::StoppedState && m_audioOutput->error() != QAudio::NoError))
         emit soundeffect->stop();
 }
 
@@ -404,6 +396,8 @@ qint64 PrivateSoundSource::readData( char* data, qint64 len)
                 memcpy(data + dataOffset, sampleData + m_offset, sampleSize - m_offset);
                 bytesWritten += sampleSize - m_offset;
                 int wrapLen = periodSize - (sampleSize - m_offset);
+                if (wrapLen > sampleSize)
+                    wrapLen = sampleSize;
 #ifdef QT_QAUDIO_DEBUG
                 qDebug() << "END OF SOUND: bytesWritten=" << bytesWritten << ", offset=" << m_offset
                          << ", part1=" << (sampleSize-m_offset);

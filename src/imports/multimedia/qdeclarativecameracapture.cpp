@@ -1,39 +1,31 @@
 /****************************************************************************
 **
-** Copyright (C) 2013 Digia Plc and/or its subsidiary(-ies).
-** Contact: http://www.qt-project.org/legal
+** Copyright (C) 2015 The Qt Company Ltd.
+** Contact: http://www.qt.io/licensing/
 **
 ** This file is part of the plugins of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL$
+** $QT_BEGIN_LICENSE:LGPL21$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and Digia.  For licensing terms and
-** conditions see http://qt.digia.com/licensing.  For further information
-** use the contact form at http://qt.digia.com/contact-us.
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see http://www.qt.io/terms-conditions. For further
+** information use the contact form at http://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU Lesser General Public License version 2.1 requirements
-** will be met: http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 2.1 or version 3 as published by the Free
+** Software Foundation and appearing in the file LICENSE.LGPLv21 and
+** LICENSE.LGPLv3 included in the packaging of this file. Please review the
+** following information to ensure the GNU Lesser General Public License
+** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
+** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
 **
-** In addition, as a special exception, Digia gives you certain additional
-** rights.  These rights are described in the Digia Qt LGPL Exception
+** As a special exception, The Qt Company gives you certain additional
+** rights. These rights are described in The Qt Company LGPL Exception
 ** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3.0 as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU General Public License version 3.0 requirements will be
-** met: http://www.gnu.org/copyleft/gpl.html.
-**
 **
 ** $QT_END_LICENSE$
 **
@@ -65,9 +57,6 @@ QT_BEGIN_NAMESPACE
     and cannot be created directly.
 
     \qml
-    import QtQuick 2.0
-    import QtMultimedia 5.0
-
     Item {
         width: 640
         height: 360
@@ -110,10 +99,10 @@ QDeclarativeCameraCapture::QDeclarativeCameraCapture(QCamera *camera, QObject *p
 
     connect(m_capture, SIGNAL(readyForCaptureChanged(bool)), this, SIGNAL(readyForCaptureChanged(bool)));
     connect(m_capture, SIGNAL(imageExposed(int)), this, SIGNAL(imageExposed(int)));
-    connect(m_capture, SIGNAL(imageCaptured(int,QImage)), this, SLOT(_q_imageCaptured(int, QImage)));
+    connect(m_capture, SIGNAL(imageCaptured(int,QImage)), this, SLOT(_q_imageCaptured(int,QImage)));
     connect(m_capture, SIGNAL(imageMetadataAvailable(int,QString,QVariant)), this,
             SLOT(_q_imageMetadataAvailable(int,QString,QVariant)));
-    connect(m_capture, SIGNAL(imageSaved(int,QString)), this, SLOT(_q_imageSaved(int, QString)));
+    connect(m_capture, SIGNAL(imageSaved(int,QString)), this, SLOT(_q_imageSaved(int,QString)));
     connect(m_capture, SIGNAL(error(int,QCameraImageCapture::Error,QString)),
             this, SLOT(_q_captureFailed(int,QCameraImageCapture::Error,QString)));
 
@@ -131,9 +120,8 @@ QDeclarativeCameraCapture::~QDeclarativeCameraCapture()
     This property holds a bool value indicating whether the camera
     is ready to capture photos or not.
 
-   If camera is not ready to capture image immediately,
-   the capture request is queued with all the related camera settings,
-   and the request will be executed as soon as possible.
+    Calling capture() while \e ready is \c false is not permitted and
+    results in an error.
 */
 
 /*!
@@ -142,11 +130,8 @@ QDeclarativeCameraCapture::~QDeclarativeCameraCapture()
     This property holds a bool value indicating whether the camera
     is ready to capture photos or not.
 
-   It's permissible to call capture() while the camera is active
-   regardless of the \e ready property value.
-   If camera is not ready to capture image immediately,
-   the capture request is queued with all the related camera settings,
-   and the request will be executed as soon as possible.
+    Calling capture() while \e ready is \c false is not permitted and
+    results in an error.
 */
 bool QDeclarativeCameraCapture::isReadyForCapture() const
 {
@@ -156,7 +141,7 @@ bool QDeclarativeCameraCapture::isReadyForCapture() const
 /*!
     \qmlmethod QtMultimedia::CameraCapture::capture()
 
-    Start image capture.  The \l onImageCaptured() and \l onImageSaved() signals will
+    Start image capture.  The \l imageCaptured and \l imageSaved signals will
     be emitted when the capture is complete.
 
     The image will be captured to the default system location, typically
@@ -165,11 +150,13 @@ bool QDeclarativeCameraCapture::isReadyForCapture() const
     for video.
 
     Camera saves all the capture parameters like exposure settings or
-    image processing parameters, so changes to camera paramaters after
+    image processing parameters, so changes to camera parameters after
     capture() is called do not affect previous capture requests.
 
-    CameraCapture::capture returns the capture requestId parameter, used with
+    capture() returns the capture requestId parameter, used with
     imageExposed(), imageCaptured(), imageMetadataAvailable() and imageSaved() signals.
+
+    \sa ready
 */
 int QDeclarativeCameraCapture::capture()
 {
@@ -179,7 +166,7 @@ int QDeclarativeCameraCapture::capture()
 /*!
     \qmlmethod QtMultimedia::CameraCapture::captureToLocation(location)
 
-    Start image capture to specified \a location.  The \l onImageCaptured() and \l onImageSaved() signals will
+    Start image capture to specified \a location.  The \l imageCaptured and \l imageSaved signals will
     be emitted when the capture is complete.
 
     CameraCapture::captureToLocation returns the capture requestId parameter, used with
@@ -267,6 +254,7 @@ QSize QDeclarativeCameraCapture::resolution()
 
 void QDeclarativeCameraCapture::setResolution(const QSize &captureResolution)
 {
+    m_imageSettings = m_capture->encodingSettings();
     if (captureResolution != resolution()) {
         m_imageSettings.setResolution(captureResolution);
         m_capture->setEncodingSettings(m_imageSettings);
@@ -309,39 +297,47 @@ void QDeclarativeCameraCapture::setMetadata(const QString &key, const QVariant &
 }
 
 /*!
-    \qmlsignal QtMultimedia::CameraCapture::onCaptureFailed(requestId, message)
+    \qmlsignal QtMultimedia::CameraCapture::captureFailed(requestId, message)
 
-    This handler is called when an error occurs during capture with \a requestId.
+    This signal is emitted when an error occurs during capture with \a requestId.
     A descriptive message is available in \a message.
+
+    The corresponding handler is \c onCaptureFailed.
 */
 
 /*!
-    \qmlsignal QtMultimedia::CameraCapture::onImageCaptured(requestId, preview)
+    \qmlsignal QtMultimedia::CameraCapture::imageCaptured(requestId, preview)
 
-    This handler is called when an image with \a requestId has been captured
+    This signal is emitted when an image with \a requestId has been captured
     but not yet saved to the filesystem.  The \a preview
     parameter can be used as the URL supplied to an \l Image.
 
-    \sa onImageSaved
+    The corresponding handler is \c onImageCaptured.
+
+    \sa imageSaved
 */
 
 /*!
-    \qmlsignal QtMultimedia::CameraCapture::onImageSaved(requestId, path)
+    \qmlsignal QtMultimedia::CameraCapture::imageSaved(requestId, path)
 
-    This handler is called after the image with \a requestId has been written to the filesystem.
+    This signal is emitted after the image with \a requestId has been written to the filesystem.
     The \a path is a local file path, not a URL.
 
-    \sa onImageCaptured
+    The corresponding handler is \c onImageSaved.
+
+    \sa imageCaptured
 */
 
 
 /*!
-    \qmlsignal QtMultimedia::CameraCapture::onImageMetadataAvailable(requestId, key, value)
+    \qmlsignal QtMultimedia::CameraCapture::imageMetadataAvailable(requestId, key, value)
 
-    This handler is called when the image with \a requestId has new metadata
+    This signal is emitted when the image with \a requestId has new metadata
     available with the key \a key and value \a value.
 
-    \sa onImageCaptured
+    The corresponding handler is \c onImageMetadataAvailable.
+
+    \sa imageCaptured
 */
 
 

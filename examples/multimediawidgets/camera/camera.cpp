@@ -1,7 +1,7 @@
 /****************************************************************************
 **
-** Copyright (C) 2013 Digia Plc and/or its subsidiary(-ies).
-** Contact: http://www.qt-project.org/legal
+** Copyright (C) 2015 The Qt Company Ltd.
+** Contact: http://www.qt.io/licensing/
 **
 ** This file is part of the examples of the Qt Toolkit.
 **
@@ -17,8 +17,8 @@
 **     notice, this list of conditions and the following disclaimer in
 **     the documentation and/or other materials provided with the
 **     distribution.
-**   * Neither the name of Digia Plc and its Subsidiary(-ies) nor the names
-**     of its contributors may be used to endorse or promote products derived
+**   * Neither the name of The Qt Company Ltd nor the names of its
+**     contributors may be used to endorse or promote products derived
 **     from this software without specific prior written permission.
 **
 **
@@ -46,6 +46,7 @@
 #include <QMediaService>
 #include <QMediaRecorder>
 #include <QCameraViewfinder>
+#include <QCameraInfo>
 #include <QMediaMetaData>
 
 #include <QMessageBox>
@@ -53,9 +54,7 @@
 
 #include <QtWidgets>
 
-#if (defined(Q_WS_MAEMO_6)) && QT_VERSION >= 0x040700
-#define HAVE_CAMERA_BUTTONS
-#endif
+Q_DECLARE_METATYPE(QCameraInfo)
 
 Camera::Camera(QWidget *parent) :
     QMainWindow(parent),
@@ -69,30 +68,23 @@ Camera::Camera(QWidget *parent) :
     ui->setupUi(this);
 
     //Camera devices:
-    QByteArray cameraDevice;
 
     QActionGroup *videoDevicesGroup = new QActionGroup(this);
     videoDevicesGroup->setExclusive(true);
-    foreach(const QByteArray &deviceName, QCamera::availableDevices()) {
-        QString description = camera->deviceDescription(deviceName);
-        QAction *videoDeviceAction = new QAction(description, videoDevicesGroup);
+    foreach (const QCameraInfo &cameraInfo, QCameraInfo::availableCameras()) {
+        QAction *videoDeviceAction = new QAction(cameraInfo.description(), videoDevicesGroup);
         videoDeviceAction->setCheckable(true);
-        videoDeviceAction->setData(QVariant(deviceName));
-        if (cameraDevice.isEmpty()) {
-            cameraDevice = deviceName;
+        videoDeviceAction->setData(QVariant::fromValue(cameraInfo));
+        if (cameraInfo == QCameraInfo::defaultCamera())
             videoDeviceAction->setChecked(true);
-        }
+
         ui->menuDevices->addAction(videoDeviceAction);
     }
 
     connect(videoDevicesGroup, SIGNAL(triggered(QAction*)), SLOT(updateCameraDevice(QAction*)));
     connect(ui->captureWidget, SIGNAL(currentChanged(int)), SLOT(updateCaptureMode()));
 
-#ifdef HAVE_CAMERA_BUTTONS
-    ui->lockButton->hide();
-#endif
-
-    setCamera(cameraDevice);
+    setCamera(QCameraInfo::defaultCamera());
 }
 
 Camera::~Camera()
@@ -102,16 +94,13 @@ Camera::~Camera()
     delete camera;
 }
 
-void Camera::setCamera(const QByteArray &cameraDevice)
+void Camera::setCamera(const QCameraInfo &cameraInfo)
 {
     delete imageCapture;
     delete mediaRecorder;
     delete camera;
 
-    if (cameraDevice.isEmpty())
-        camera = new QCamera;
-    else
-        camera = new QCamera(cameraDevice);
+    camera = new QCamera(cameraInfo);
 
     connect(camera, SIGNAL(stateChanged(QCamera::State)), this, SLOT(updateCameraState(QCamera::State)));
     connect(camera, SIGNAL(error(QCamera::Error)), this, SLOT(displayCameraError()));
@@ -140,8 +129,8 @@ void Camera::setCamera(const QByteArray &cameraDevice)
     connect(imageCapture, SIGNAL(error(int,QCameraImageCapture::Error,QString)), this,
             SLOT(displayCaptureError(int,QCameraImageCapture::Error,QString)));
 
-    connect(camera, SIGNAL(lockStatusChanged(QCamera::LockStatus, QCamera::LockChangeReason)),
-            this, SLOT(updateLockStatus(QCamera::LockStatus, QCamera::LockChangeReason)));
+    connect(camera, SIGNAL(lockStatusChanged(QCamera::LockStatus,QCamera::LockChangeReason)),
+            this, SLOT(updateLockStatus(QCamera::LockStatus,QCamera::LockChangeReason)));
 
     ui->captureWidget->setTabEnabled(0, (camera->isCaptureModeSupported(QCamera::CaptureStillImage)));
     ui->captureWidget->setTabEnabled(1, (camera->isCaptureModeSupported(QCamera::CaptureVideo)));
@@ -301,7 +290,7 @@ void Camera::updateLockStatus(QCamera::LockStatus status, QCamera::LockChangeRea
         ui->lockButton->setText(tr("Focusing..."));
         break;
     case QCamera::Locked:
-        indicationColor = Qt::darkGreen;        
+        indicationColor = Qt::darkGreen;
         ui->lockButton->setText(tr("Unlock"));
         ui->statusbar->showMessage(tr("Focused"), 2000);
         break;
@@ -352,7 +341,7 @@ void Camera::updateCaptureMode()
 
 void Camera::updateCameraState(QCamera::State state)
 {
-    switch (state) {    
+    switch (state) {
     case QCamera::ActiveState:
         ui->actionStartCamera->setEnabled(false);
         ui->actionStopCamera->setEnabled(true);
@@ -406,7 +395,7 @@ void Camera::displayCameraError()
 
 void Camera::updateCameraDevice(QAction *action)
 {
-    setCamera(action->data().toByteArray());
+    setCamera(qvariant_cast<QCameraInfo>(action->data()));
 }
 
 void Camera::displayViewfinder()

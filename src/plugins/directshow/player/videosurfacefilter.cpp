@@ -1,39 +1,31 @@
 /****************************************************************************
 **
-** Copyright (C) 2013 Digia Plc and/or its subsidiary(-ies).
-** Contact: http://www.qt-project.org/legal
+** Copyright (C) 2015 The Qt Company Ltd.
+** Contact: http://www.qt.io/licensing/
 **
 ** This file is part of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL$
+** $QT_BEGIN_LICENSE:LGPL21$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and Digia.  For licensing terms and
-** conditions see http://qt.digia.com/licensing.  For further information
-** use the contact form at http://qt.digia.com/contact-us.
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see http://www.qt.io/terms-conditions. For further
+** information use the contact form at http://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU Lesser General Public License version 2.1 requirements
-** will be met: http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 2.1 or version 3 as published by the Free
+** Software Foundation and appearing in the file LICENSE.LGPLv21 and
+** LICENSE.LGPLv3 included in the packaging of this file. Please review the
+** following information to ensure the GNU Lesser General Public License
+** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
+** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
 **
-** In addition, as a special exception, Digia gives you certain additional
-** rights.  These rights are described in the Digia Qt LGPL Exception
+** As a special exception, The Qt Company gives you certain additional
+** rights. These rights are described in The Qt Company LGPL Exception
 ** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3.0 as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU General Public License version 3.0 requirements will be
-** met: http://www.gnu.org/copyleft/gpl.html.
-**
 **
 ** $QT_END_LICENSE$
 **
@@ -77,11 +69,11 @@ VideoSurfaceFilter::VideoSurfaceFilter(
 
 VideoSurfaceFilter::~VideoSurfaceFilter()
 {
-    Q_ASSERT(m_ref == 1);
+    Q_ASSERT(m_ref == 0);
 }
 
 HRESULT VideoSurfaceFilter::QueryInterface(REFIID riid, void **ppvObject)
-{    
+{
     // 2dd74950-a890-11d1-abe8-00a0c905f375
     static const GUID iid_IAmFilterMiscFlags = {
         0x2dd74950, 0xa890, 0x11d1, {0xab, 0xe8, 0x00, 0xa0, 0xc9, 0x05, 0xf3, 0x75} };
@@ -118,8 +110,8 @@ ULONG VideoSurfaceFilter::AddRef()
 ULONG VideoSurfaceFilter::Release()
 {
     ULONG ref = InterlockedDecrement(&m_ref);
-
-    Q_ASSERT(ref != 0);
+    if (ref == 0)
+        delete this;
 
     return ref;
 }
@@ -154,6 +146,14 @@ HRESULT VideoSurfaceFilter::Stop()
     m_state = State_Stopped;
 
     m_sampleScheduler.stop();
+
+    if (thread() == QThread::currentThread()) {
+        flush();
+    } else {
+        QMutexLocker locker(&m_mutex);
+        m_loop->postEvent(this, new QEvent(QEvent::Type(FlushSurface)));
+        m_wait.wait(&m_mutex);
+    }
 
     return S_OK;
 }
@@ -614,10 +614,24 @@ void VideoSurfaceFilter::sampleReady()
     IMediaSample *sample = m_sampleScheduler.takeSample(&eos);
 
     if (sample) {
-        m_surface->present(QVideoFrame(
-                new MediaSampleVideoBuffer(sample, m_bytesPerLine),
-                m_surfaceFormat.frameSize(),
-                m_surfaceFormat.pixelFormat()));
+        QVideoFrame frame(new MediaSampleVideoBuffer(sample, m_bytesPerLine),
+                          m_surfaceFormat.frameSize(),
+                          m_surfaceFormat.pixelFormat());
+
+        if (IMediaSeeking *seeking = com_cast<IMediaSeeking>(m_graph, IID_IMediaSeeking)) {
+            LONGLONG position = 0;
+            seeking->GetCurrentPosition(&position);
+            seeking->Release();
+
+            frame.setStartTime(position * 0.1);
+
+            REFERENCE_TIME startTime = -1;
+            REFERENCE_TIME endTime = -1;
+            if (sample->GetTime(&startTime, &endTime) == S_OK)
+                frame.setEndTime(frame.startTime() + (endTime - startTime) * 0.1);
+        }
+
+        m_surface->present(frame);
 
         sample->Release();
 

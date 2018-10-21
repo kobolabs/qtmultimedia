@@ -1,39 +1,31 @@
 /****************************************************************************
 **
-** Copyright (C) 2013 Digia Plc and/or its subsidiary(-ies).
-** Contact: http://www.qt-project.org/legal
+** Copyright (C) 2015 The Qt Company Ltd.
+** Contact: http://www.qt.io/licensing/
 **
 ** This file is part of the plugins of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL$
+** $QT_BEGIN_LICENSE:LGPL21$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and Digia.  For licensing terms and
-** conditions see http://qt.digia.com/licensing.  For further information
-** use the contact form at http://qt.digia.com/contact-us.
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see http://www.qt.io/terms-conditions. For further
+** information use the contact form at http://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU Lesser General Public License version 2.1 requirements
-** will be met: http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 2.1 or version 3 as published by the Free
+** Software Foundation and appearing in the file LICENSE.LGPLv21 and
+** LICENSE.LGPLv3 included in the packaging of this file. Please review the
+** following information to ensure the GNU Lesser General Public License
+** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
+** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
 **
-** In addition, as a special exception, Digia gives you certain additional
-** rights.  These rights are described in the Digia Qt LGPL Exception
+** As a special exception, The Qt Company gives you certain additional
+** rights. These rights are described in The Qt Company LGPL Exception
 ** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3.0 as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU General Public License version 3.0 requirements will be
-** met: http://www.gnu.org/copyleft/gpl.html.
-**
 **
 ** $QT_END_LICENSE$
 **
@@ -52,8 +44,6 @@ QT_BEGIN_NAMESPACE
     \ingroup multimedia_qml
     \ingroup camera_qml
 
-    CameraFlash is part of the \b{QtMultimedia 5.0} module.
-
     This type allows you to operate the camera flash
     hardware and control the flash mode used.  Not all cameras have
     flash hardware (and in some cases it is shared with the
@@ -63,8 +53,6 @@ QT_BEGIN_NAMESPACE
     \c flash property of a \l Camera should be used.
 
     \qml
-    import QtQuick 2.0
-    import QtMultimedia 5.0
 
     Camera {
         id: camera
@@ -89,11 +77,7 @@ QDeclarativeCameraFlash::QDeclarativeCameraFlash(QCamera *camera, QObject *paren
 QDeclarativeCameraFlash::~QDeclarativeCameraFlash()
 {
 }
-/*!
-    \property bool QDeclarativeCameraFlash::ready
 
-    This property indicates whether the flash is charged.
-*/
 /*!
     \qmlproperty bool QtMultimedia::CameraFlash::ready
 
@@ -103,11 +87,7 @@ bool QDeclarativeCameraFlash::isFlashReady() const
 {
     return m_exposure->isFlashReady();
 }
-/*!
-    \property QDeclarativeCameraFlash::mode
 
-    This property holds the camera flash mode. The mode can be one of the constants in \l QCameraExposure::FlashMode.
-*/
 /*!
     \qmlproperty enumeration QtMultimedia::CameraFlash::mode
 
@@ -121,7 +101,10 @@ bool QDeclarativeCameraFlash::isFlashReady() const
     \row \li Camera.FlashAuto            \li Automatic flash.
     \row \li Camera.FlashRedEyeReduction \li Red eye reduction flash.
     \row \li Camera.FlashFill            \li Use flash to fillin shadows.
-    \row \li Camera.FlashTorch           \li Constant light source, useful for focusing and video capture.
+    \row \li Camera.FlashTorch           \li Constant light source. If supported, torch can be
+                                             enabled without loading the camera.
+    \row \li Camera.FlashVideoLight      \li Constant light source, useful for video capture.
+                                             The light is turned on only while the camera is active.
     \row \li Camera.FlashSlowSyncFrontCurtain
                                 \li Use the flash in conjunction with a slow shutter speed.
                                 This mode allows better exposure of distant objects and/or motion blur effect.
@@ -131,14 +114,14 @@ bool QDeclarativeCameraFlash::isFlashReady() const
     \endtable
 
 */
-int QDeclarativeCameraFlash::flashMode() const
+QDeclarativeCameraFlash::FlashMode QDeclarativeCameraFlash::flashMode() const
 {
-    return m_exposure->flashMode();
+    return QDeclarativeCameraFlash::FlashMode(int(m_exposure->flashMode()));
 }
 
-void QDeclarativeCameraFlash::setFlashMode(int mode)
+void QDeclarativeCameraFlash::setFlashMode(QDeclarativeCameraFlash::FlashMode mode)
 {
-    if (m_exposure->flashMode() != mode) {
+    if (flashMode() != mode) {
         m_exposure->setFlashMode(QCameraExposure::FlashModes(mode));
         emit flashModeChanged(mode);
     }
@@ -154,7 +137,7 @@ void QDeclarativeCameraFlash::setFlashMode(int mode)
     \qmlsignal QtMultimedia::CameraFlash::flashReady(bool)
     This signal is emitted when QCameraExposure indicates that
     the flash is ready to use.
-    The corresponsing handler is \c onFlashReadyChanged.
+    The corresponding handler is \c onFlashReadyChanged.
 */
 
 QT_END_NAMESPACE

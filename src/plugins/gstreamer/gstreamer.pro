@@ -2,12 +2,9 @@ TEMPLATE = subdirs
 
 SUBDIRS += \
     audiodecoder \
-    mediacapture \
-    mediaplayer
-
-config_gstreamer_encodingprofiles {
-    SUBDIRS += camerabin
-}
+    camerabin \
+    mediaplayer \
+    mediacapture
 
 OTHER_FILES += \
     gstreamer.json

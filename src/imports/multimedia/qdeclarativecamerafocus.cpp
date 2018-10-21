@@ -1,39 +1,31 @@
 /****************************************************************************
 **
-** Copyright (C) 2013 Digia Plc and/or its subsidiary(-ies).
-** Contact: http://www.qt-project.org/legal
+** Copyright (C) 2015 The Qt Company Ltd.
+** Contact: http://www.qt.io/licensing/
 **
 ** This file is part of the plugins of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL$
+** $QT_BEGIN_LICENSE:LGPL21$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and Digia.  For licensing terms and
-** conditions see http://qt.digia.com/licensing.  For further information
-** use the contact form at http://qt.digia.com/contact-us.
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see http://www.qt.io/terms-conditions. For further
+** information use the contact form at http://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU Lesser General Public License version 2.1 requirements
-** will be met: http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 2.1 or version 3 as published by the Free
+** Software Foundation and appearing in the file LICENSE.LGPLv21 and
+** LICENSE.LGPLv3 included in the packaging of this file. Please review the
+** following information to ensure the GNU Lesser General Public License
+** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
+** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
 **
-** In addition, as a special exception, Digia gives you certain additional
-** rights.  These rights are described in the Digia Qt LGPL Exception
+** As a special exception, The Qt Company gives you certain additional
+** rights. These rights are described in The Qt Company LGPL Exception
 ** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3.0 as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU General Public License version 3.0 requirements will be
-** met: http://www.gnu.org/copyleft/gpl.html.
-**
 **
 ** $QT_END_LICENSE$
 **
@@ -52,8 +44,6 @@ QT_BEGIN_NAMESPACE
     \ingroup multimedia_qml
     \ingroup camera_qml
 
-    CameraFocus is part of the \b{QtMultimedia 5.0} module.
-
     This type allows control over manual and automatic
     focus settings, including information about any parts of the
     camera frame that are selected for autofocusing.
@@ -62,8 +52,6 @@ QT_BEGIN_NAMESPACE
     \c focus property of a \l Camera should be used.
 
     \qml
-    import QtQuick 2.0
-    import QtMultimedia 5.0
 
     Item {
         width: 640
@@ -161,9 +149,9 @@ QDeclarativeCameraFocus::~QDeclarativeCameraFocus()
     and \l focusZones property provide information and control
     over how automatic focusing is performed.
 */
-QDeclarativeCamera::FocusMode QDeclarativeCameraFocus::focusMode() const
+QDeclarativeCameraFocus::FocusMode QDeclarativeCameraFocus::focusMode() const
 {
-    return QDeclarativeCamera::FocusMode(int(m_focus->focusMode()));
+    return QDeclarativeCameraFocus::FocusMode(int(m_focus->focusMode()));
 }
 
 /*!
@@ -172,12 +160,12 @@ QDeclarativeCamera::FocusMode QDeclarativeCameraFocus::focusMode() const
     Returns true if the supplied \a mode is a supported focus mode, and
     false otherwise.
 */
-bool QDeclarativeCameraFocus::isFocusModeSupported(QDeclarativeCamera::FocusMode mode) const
+bool QDeclarativeCameraFocus::isFocusModeSupported(QDeclarativeCameraFocus::FocusMode mode) const
 {
     return m_focus->isFocusModeSupported(QCameraFocus::FocusModes(int(mode)));
 }
 
-void QDeclarativeCameraFocus::setFocusMode(QDeclarativeCamera::FocusMode mode)
+void QDeclarativeCameraFocus::setFocusMode(QDeclarativeCameraFocus::FocusMode mode)
 {
     if (mode != focusMode()) {
         m_focus->setFocusMode(QCameraFocus::FocusModes(int(mode)));
@@ -221,12 +209,12 @@ void QDeclarativeCameraFocus::setFocusMode(QDeclarativeCamera::FocusMode mode)
       \li Focus to the custom point, defined by the customFocusPoint property.
     \endtable
 */
-QDeclarativeCamera::FocusPointMode QDeclarativeCameraFocus::focusPointMode() const
+QDeclarativeCameraFocus::FocusPointMode QDeclarativeCameraFocus::focusPointMode() const
 {
-    return QDeclarativeCamera::FocusPointMode(m_focus->focusPointMode());
+    return QDeclarativeCameraFocus::FocusPointMode(m_focus->focusPointMode());
 }
 
-void QDeclarativeCameraFocus::setFocusPointMode(QDeclarativeCamera::FocusPointMode mode)
+void QDeclarativeCameraFocus::setFocusPointMode(QDeclarativeCameraFocus::FocusPointMode mode)
 {
     if (mode != focusPointMode()) {
         m_focus->setFocusPointMode(QCameraFocus::FocusPointMode(mode));
@@ -240,7 +228,7 @@ void QDeclarativeCameraFocus::setFocusPointMode(QDeclarativeCamera::FocusPointMo
     Returns true if the supplied \a mode is a supported focus point mode, and
     false otherwise.
 */
-bool QDeclarativeCameraFocus::isFocusPointModeSupported(QDeclarativeCamera::FocusPointMode mode) const
+bool QDeclarativeCameraFocus::isFocusPointModeSupported(QDeclarativeCameraFocus::FocusPointMode mode) const
 {
     return m_focus->isFocusPointModeSupported(QCameraFocus::FocusPointMode(mode));
 }

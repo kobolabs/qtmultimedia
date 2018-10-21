@@ -1,39 +1,31 @@
 /****************************************************************************
 **
-** Copyright (C) 2013 Digia Plc and/or its subsidiary(-ies).
-** Contact: http://www.qt-project.org/legal
+** Copyright (C) 2015 The Qt Company Ltd.
+** Contact: http://www.qt.io/licensing/
 **
 ** This file is part of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL$
+** $QT_BEGIN_LICENSE:LGPL21$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and Digia.  For licensing terms and
-** conditions see http://qt.digia.com/licensing.  For further information
-** use the contact form at http://qt.digia.com/contact-us.
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see http://www.qt.io/terms-conditions. For further
+** information use the contact form at http://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU Lesser General Public License version 2.1 requirements
-** will be met: http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 2.1 or version 3 as published by the Free
+** Software Foundation and appearing in the file LICENSE.LGPLv21 and
+** LICENSE.LGPLv3 included in the packaging of this file. Please review the
+** following information to ensure the GNU Lesser General Public License
+** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
+** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
 **
-** In addition, as a special exception, Digia gives you certain additional
-** rights.  These rights are described in the Digia Qt LGPL Exception
+** As a special exception, The Qt Company gives you certain additional
+** rights. These rights are described in The Qt Company LGPL Exception
 ** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3.0 as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU General Public License version 3.0 requirements will be
-** met: http://www.gnu.org/copyleft/gpl.html.
-**
 **
 ** $QT_END_LICENSE$
 **
@@ -47,19 +39,12 @@
 #include "qmediapluginloader_p.h"
 #include "qaudiodevicefactory_p.h"
 
-#ifndef QT_NO_AUDIO_BACKEND
-#if defined(Q_OS_WIN)
-#include "qaudiodeviceinfo_win32_p.h"
-#include "qaudiooutput_win32_p.h"
-#include "qaudioinput_win32_p.h"
-#elif defined(HAS_ALSA)
-#include "qaudiodeviceinfo_alsa_p.h"
-#include "qaudiooutput_alsa_p.h"
-#include "qaudioinput_alsa_p.h"
-#endif
-#endif
-
 QT_BEGIN_NAMESPACE
+
+static QString defaultKey()
+{
+    return QStringLiteral("default");
+}
 
 #if !defined (QT_NO_LIBRARY) && !defined(QT_NO_SETTINGS)
 Q_GLOBAL_STATIC_WITH_ARGS(QMediaPluginLoader, audioLoader,
@@ -132,13 +117,6 @@ public:
 QList<QAudioDeviceInfo> QAudioDeviceFactory::availableDevices(QAudio::Mode mode)
 {
     QList<QAudioDeviceInfo> devices;
-#ifndef QT_NO_AUDIO_BACKEND
-#if (defined(Q_OS_WIN) || defined(HAS_ALSA))
-    foreach (const QByteArray &handle, QAudioDeviceInfoInternal::availableDevices(mode))
-        devices << QAudioDeviceInfo(QLatin1String("builtin"), handle, mode);
-#endif
-#endif
-
 #if !defined (QT_NO_LIBRARY) && !defined(QT_NO_SETTINGS)
     QMediaPluginLoader* l = audioLoader();
     foreach (const QString& key, l->keys()) {
@@ -156,53 +134,46 @@ QList<QAudioDeviceInfo> QAudioDeviceFactory::availableDevices(QAudio::Mode mode)
 QAudioDeviceInfo QAudioDeviceFactory::defaultInputDevice()
 {
 #if !defined (QT_NO_LIBRARY) && !defined(QT_NO_SETTINGS)
-    QAudioSystemFactoryInterface* plugin = qobject_cast<QAudioSystemFactoryInterface*>(audioLoader()->instance(QLatin1String("default")));
-
+    QAudioSystemFactoryInterface* plugin = qobject_cast<QAudioSystemFactoryInterface*>(audioLoader()->instance(defaultKey()));
     if (plugin) {
         QList<QByteArray> list = plugin->availableDevices(QAudio::AudioInput);
         if (list.size() > 0)
-            return QAudioDeviceInfo(QLatin1String("default"), list.at(0), QAudio::AudioInput);
+            return QAudioDeviceInfo(defaultKey(), list.at(0), QAudio::AudioInput);
     }
+
+    // if no plugin is marked as default or if the default plugin doesn't have any input device,
+    // return the first input available from other plugins.
+    QList<QAudioDeviceInfo> inputDevices = availableDevices(QAudio::AudioInput);
+    if (!inputDevices.isEmpty())
+        return inputDevices.first();
 #endif
 
-#ifndef QT_NO_AUDIO_BACKEND
-#if (defined(Q_OS_WIN) || defined(HAS_ALSA))
-    return QAudioDeviceInfo(QLatin1String("builtin"), QAudioDeviceInfoInternal::defaultInputDevice(), QAudio::AudioInput);
-#endif
-#endif
     return QAudioDeviceInfo();
 }
 
 QAudioDeviceInfo QAudioDeviceFactory::defaultOutputDevice()
 {
 #if !defined (QT_NO_LIBRARY) && !defined(QT_NO_SETTINGS)
-    QAudioSystemFactoryInterface* plugin = qobject_cast<QAudioSystemFactoryInterface*>(audioLoader()->instance(QLatin1String("default")));
-
+    QAudioSystemFactoryInterface* plugin = qobject_cast<QAudioSystemFactoryInterface*>(audioLoader()->instance(defaultKey()));
     if (plugin) {
         QList<QByteArray> list = plugin->availableDevices(QAudio::AudioOutput);
         if (list.size() > 0)
-            return QAudioDeviceInfo(QLatin1String("default"), list.at(0), QAudio::AudioOutput);
+            return QAudioDeviceInfo(defaultKey(), list.at(0), QAudio::AudioOutput);
     }
+
+    // if no plugin is marked as default or if the default plugin doesn't have any output device,
+    // return the first output available from other plugins.
+    QList<QAudioDeviceInfo> outputDevices = availableDevices(QAudio::AudioOutput);
+    if (!outputDevices.isEmpty())
+        return outputDevices.first();
 #endif
 
-#ifndef QT_NO_AUDIO_BACKEND
-#if (defined(Q_OS_WIN) || defined(HAS_ALSA))
-    return QAudioDeviceInfo(QLatin1String("builtin"), QAudioDeviceInfoInternal::defaultOutputDevice(), QAudio::AudioOutput);
-#endif
-#endif
     return QAudioDeviceInfo();
 }
 
 QAbstractAudioDeviceInfo* QAudioDeviceFactory::audioDeviceInfo(const QString &realm, const QByteArray &handle, QAudio::Mode mode)
 {
     QAbstractAudioDeviceInfo *rc = 0;
-
-#ifndef QT_NO_AUDIO_BACKEND
-#if (defined(Q_OS_WIN) || defined(HAS_ALSA))
-    if (realm == QLatin1String("builtin"))
-        return new QAudioDeviceInfoInternal(handle, mode);
-#endif
-#endif
 
 #if !defined (QT_NO_LIBRARY) && !defined(QT_NO_SETTINGS)
     QAudioSystemFactoryInterface* plugin =
@@ -229,15 +200,7 @@ QAbstractAudioInput* QAudioDeviceFactory::createInputDevice(QAudioDeviceInfo con
 {
     if (deviceInfo.isNull())
         return new QNullInputDevice();
-#ifndef QT_NO_AUDIO_BACKEND
-#if (defined(Q_OS_WIN) || defined(HAS_ALSA))
-    if (deviceInfo.realm() == QLatin1String("builtin")) {
-        QAbstractAudioInput* p = new QAudioInputPrivate(deviceInfo.handle());
-        if (p) p->setFormat(format);
-        return p;
-    }
-#endif
-#endif
+
 #if !defined (QT_NO_LIBRARY) && !defined(QT_NO_SETTINGS)
     QAudioSystemFactoryInterface* plugin =
         qobject_cast<QAudioSystemFactoryInterface*>(audioLoader()->instance(deviceInfo.realm()));
@@ -256,15 +219,6 @@ QAbstractAudioOutput* QAudioDeviceFactory::createOutputDevice(QAudioDeviceInfo c
 {
     if (deviceInfo.isNull())
         return new QNullOutputDevice();
-#ifndef QT_NO_AUDIO_BACKEND
-#if (defined(Q_OS_WIN) || defined(HAS_ALSA))
-    if (deviceInfo.realm() == QLatin1String("builtin")) {
-        QAbstractAudioOutput* p = new QAudioOutputPrivate(deviceInfo.handle());
-        if (p) p->setFormat(format);
-        return p;
-    }
-#endif
-#endif
 
 #if !defined (QT_NO_LIBRARY) && !defined(QT_NO_SETTINGS)
     QAudioSystemFactoryInterface* plugin =

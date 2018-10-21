@@ -1,43 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2013 Digia Plc and/or its subsidiary(-ies).
-** Contact: http://www.qt-project.org/legal
+** Copyright (C) 2015 The Qt Company Ltd.
+** Contact: http://www.qt.io/licensing/
 **
 ** This file is part of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL$
+** $QT_BEGIN_LICENSE:LGPL21$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and Digia.  For licensing terms and
-** conditions see http://qt.digia.com/licensing.  For further information
-** use the contact form at http://qt.digia.com/contact-us.
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see http://www.qt.io/terms-conditions. For further
+** information use the contact form at http://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU Lesser General Public License version 2.1 requirements
-** will be met: http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 2.1 or version 3 as published by the Free
+** Software Foundation and appearing in the file LICENSE.LGPLv21 and
+** LICENSE.LGPLv3 included in the packaging of this file. Please review the
+** following information to ensure the GNU Lesser General Public License
+** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
+** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
 **
-** In addition, as a special exception, Digia gives you certain additional
-** rights.  These rights are described in the Digia Qt LGPL Exception
+** As a special exception, The Qt Company gives you certain additional
+** rights. These rights are described in The Qt Company LGPL Exception
 ** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3.0 as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU General Public License version 3.0 requirements will be
-** met: http://www.gnu.org/copyleft/gpl.html.
-**
 **
 ** $QT_END_LICENSE$
 **
 ****************************************************************************/
+
+#include <dshow.h>
 
 #include "directshowplayercontrol.h"
 
@@ -61,17 +55,6 @@ static int volumeToDecibels(int volume)
     }
 }
 
-static int decibelsToVolume(int dB)
-{
-    if (dB == -10000) {
-        return 0;
-    } else if (dB == 0) {
-        return 100;
-    } else {
-        return qRound(100 * qPow(10, qreal(dB) / 5000));
-    }
-}
-
 DirectShowPlayerControl::DirectShowPlayerControl(DirectShowPlayerService *service, QObject *parent)
     : QMediaPlayerControl(parent)
     , m_service(service)
@@ -81,8 +64,10 @@ DirectShowPlayerControl::DirectShowPlayerControl(DirectShowPlayerService *servic
     , m_status(QMediaPlayer::NoMedia)
     , m_error(QMediaPlayer::NoError)
     , m_streamTypes(0)
-    , m_muteVolume(-1)
-    , m_position(0)
+    , m_volume(100)
+    , m_muted(false)
+    , m_emitPosition(-1)
+    , m_pendingPosition(-1)
     , m_duration(0)
     , m_playbackRate(0)
     , m_seekable(false)
@@ -112,73 +97,72 @@ qint64 DirectShowPlayerControl::duration() const
 
 qint64 DirectShowPlayerControl::position() const
 {
-    return const_cast<qint64 &>(m_position) = m_service->position();
+    if (m_pendingPosition != -1)
+        return m_pendingPosition;
+
+    return m_service->position();
 }
 
 void DirectShowPlayerControl::setPosition(qint64 position)
 {
+    if (m_status == QMediaPlayer::EndOfMedia) {
+        m_status = QMediaPlayer::LoadedMedia;
+        emit mediaStatusChanged(m_status);
+    }
+
+    if (m_state == QMediaPlayer::StoppedState && m_pendingPosition != position) {
+        m_pendingPosition = position;
+        emit positionChanged(m_pendingPosition);
+        return;
+    }
+
     m_service->seek(position);
+    m_pendingPosition = -1;
 }
 
 int DirectShowPlayerControl::volume() const
 {
-    if (m_muteVolume >= 0) {
-        return m_muteVolume;
-    } else if (m_audio) {
-        long dB = 0;
-
-        m_audio->get_Volume(&dB);
-
-        return decibelsToVolume(dB);
-    } else {
-        return 0;
-    }
+    return m_volume;
 }
 
 void DirectShowPlayerControl::setVolume(int volume)
 {
     int boundedVolume = qBound(0, volume, 100);
 
-    if (m_muteVolume >= 0) {
-        m_muteVolume = boundedVolume;
+    if (m_volume == boundedVolume)
+        return;
 
-        emit volumeChanged(m_muteVolume);
-    } else if (m_audio) {
-        m_audio->put_Volume(volumeToDecibels(volume));
+    m_volume = boundedVolume;
 
-        emit volumeChanged(boundedVolume);
-    }
+    if (!m_muted)
+        setVolumeHelper(m_volume);
+
+    emit volumeChanged(m_volume);
 }
 
 bool DirectShowPlayerControl::isMuted() const
 {
-    return m_muteVolume >= 0;
+    return m_muted;
 }
 
 void DirectShowPlayerControl::setMuted(bool muted)
 {
-    if (muted && m_muteVolume < 0) {
-        if (m_audio) {
-            long dB = 0;
+    if (m_muted == muted)
+        return;
 
-            m_audio->get_Volume(&dB);
+    m_muted = muted;
 
-            m_muteVolume = decibelsToVolume(dB);
+    setVolumeHelper(m_muted ? 0 : m_volume);
 
-            m_audio->put_Volume(-10000);
-        } else {
-            m_muteVolume = 0;
-        }
+    emit mutedChanged(m_muted);
+}
 
-        emit mutedChanged(muted);
-    } else if (!muted && m_muteVolume >= 0) {
-        if (m_audio) {
-            m_audio->put_Volume(volumeToDecibels(m_muteVolume));
-        }
-        m_muteVolume = -1;
+void DirectShowPlayerControl::setVolumeHelper(int volume)
+{
+    if (!m_audio)
+        return;
 
-        emit mutedChanged(muted);
-    }
+    m_audio->put_Volume(volumeToDecibels(volume));
 }
 
 int DirectShowPlayerControl::bufferStatus() const
@@ -232,6 +216,9 @@ const QIODevice *DirectShowPlayerControl::mediaStream() const
 
 void DirectShowPlayerControl::setMedia(const QMediaContent &media, QIODevice *stream)
 {
+    m_pendingPosition = -1;
+    m_emitPosition = -1;
+
     m_media = media;
     m_stream = stream;
 
@@ -245,32 +232,41 @@ void DirectShowPlayerControl::setMedia(const QMediaContent &media, QIODevice *st
 
 void DirectShowPlayerControl::play()
 {
-    if (m_status == QMediaPlayer::NoMedia)
-        return;
-    if (m_status == QMediaPlayer::InvalidMedia) {
-        setMedia(m_media, m_stream);
-        if (m_error != QMediaPlayer::NoError)
-            return;
-    }
-    m_service->play();
-    emit stateChanged(m_state = QMediaPlayer::PlayingState);
+    playOrPause(QMediaPlayer::PlayingState);
 }
 
 void DirectShowPlayerControl::pause()
 {
-    if (m_status == QMediaPlayer::NoMedia)
+    playOrPause(QMediaPlayer::PausedState);
+}
+
+void DirectShowPlayerControl::playOrPause(QMediaPlayer::State state)
+{
+    if (m_status == QMediaPlayer::NoMedia || state == QMediaPlayer::StoppedState)
         return;
     if (m_status == QMediaPlayer::InvalidMedia) {
         setMedia(m_media, m_stream);
         if (m_error != QMediaPlayer::NoError)
             return;
     }
-    m_service->pause();
-    emit stateChanged(m_state = QMediaPlayer::PausedState);
+
+    m_emitPosition = -1;
+    m_state = state;
+
+    if (m_pendingPosition != -1)
+        setPosition(m_pendingPosition);
+
+    if (state == QMediaPlayer::PausedState)
+        m_service->pause();
+    else
+        m_service->play();
+
+    emit stateChanged(m_state);
 }
 
 void DirectShowPlayerControl::stop()
 {
+    m_emitPosition = -1;
     m_service->stop();
     emit stateChanged(m_state = QMediaPlayer::StoppedState);
 }
@@ -302,8 +298,8 @@ void DirectShowPlayerControl::emitPropertyChanges()
         emit videoAvailableChanged(m_streamTypes & DirectShowPlayerService::VideoStream);
     }
 
-    if (properties & PositionProperty)
-        emit positionChanged(m_position);
+    if (properties & PositionProperty && m_emitPosition != -1)
+        emit positionChanged(m_emitPosition);
 
     if (properties & DurationProperty)
         emit durationChanged(m_duration);
@@ -384,6 +380,7 @@ void DirectShowPlayerControl::updateAudioOutput(IBaseFilter *filter)
         m_audio->Release();
 
     m_audio = com_cast<IBasicAudio>(filter, IID_IBasicAudio);
+    setVolumeHelper(m_muted ? 0 : m_volume);
 }
 
 void DirectShowPlayerControl::updateError(QMediaPlayer::Error error, const QString &errorString)
@@ -397,8 +394,8 @@ void DirectShowPlayerControl::updateError(QMediaPlayer::Error error, const QStri
 
 void DirectShowPlayerControl::updatePosition(qint64 position)
 {
-    if (m_position != position) {
-        m_position = position;
+    if (m_emitPosition != position) {
+        m_emitPosition = position;
 
         scheduleUpdate(PositionProperty);
     }

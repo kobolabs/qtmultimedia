@@ -1,7 +1,7 @@
 /****************************************************************************
 **
-** Copyright (C) 2013 Digia Plc and/or its subsidiary(-ies).
-** Contact: http://www.qt-project.org/legal
+** Copyright (C) 2015 The Qt Company Ltd.
+** Contact: http://www.qt.io/licensing/
 **
 ** This file is part of the examples of the Qt Toolkit.
 **
@@ -17,8 +17,8 @@
 **     notice, this list of conditions and the following disclaimer in
 **     the documentation and/or other materials provided with the
 **     distribution.
-**   * Neither the name of Digia Plc and its Subsidiary(-ies) nor the names
-**     of its contributors may be used to endorse or promote products derived
+**   * Neither the name of The Qt Company Ltd nor the names of its
+**     contributors may be used to endorse or promote products derived
 **     from this software without specific prior written permission.
 **
 **
@@ -39,7 +39,7 @@
 ****************************************************************************/
 
 import QtQuick 2.0
-import QtMultimedia 5.0
+import QtMultimedia 5.4
 
 FocusScope {
     property Camera camera
@@ -53,7 +53,7 @@ FocusScope {
 
     Rectangle {
         id: buttonPaneShadow
-        width: buttonsColumn.width + 16
+        width: bottomColumn.width + 16
         height: parent.height
         anchors.top: parent.top
         anchors.right: parent.right
@@ -110,6 +110,7 @@ FocusScope {
                         text: "Fluorescent"
                     }
                 }
+                onValueChanged: captureControls.camera.imageProcessing.whiteBalanceMode = wbModesButton.value
             }
 
             CameraButton {
@@ -129,11 +130,15 @@ FocusScope {
             id: bottomColumn
             spacing: 8
 
+            CameraListButton {
+                model: QtMultimedia.availableCameras
+                onValueChanged: captureControls.camera.deviceId = value
+            }
+
             CameraButton {
                 text: "Switch to Video"
                 onClicked: captureControls.videoModeSelected()
             }
-
 
             CameraButton {
                 id: quitButton

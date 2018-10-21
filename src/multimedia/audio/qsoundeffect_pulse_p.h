@@ -1,39 +1,31 @@
 /****************************************************************************
 **
-** Copyright (C) 2013 Digia Plc and/or its subsidiary(-ies).
-** Contact: http://www.qt-project.org/legal
+** Copyright (C) 2015 The Qt Company Ltd.
+** Contact: http://www.qt.io/licensing/
 **
 ** This file is part of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL$
+** $QT_BEGIN_LICENSE:LGPL21$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and Digia.  For licensing terms and
-** conditions see http://qt.digia.com/licensing.  For further information
-** use the contact form at http://qt.digia.com/contact-us.
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see http://www.qt.io/terms-conditions. For further
+** information use the contact form at http://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU Lesser General Public License version 2.1 requirements
-** will be met: http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 2.1 or version 3 as published by the Free
+** Software Foundation and appearing in the file LICENSE.LGPLv21 and
+** LICENSE.LGPLv3 included in the packaging of this file. Please review the
+** following information to ensure the GNU Lesser General Public License
+** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
+** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
 **
-** In addition, as a special exception, Digia gives you certain additional
-** rights.  These rights are described in the Digia Qt LGPL Exception
+** As a special exception, The Qt Company gives you certain additional
+** rights. These rights are described in The Qt Company LGPL Exception
 ** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3.0 as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU General Public License version 3.0 requirements will be
-** met: http://www.gnu.org/copyleft/gpl.html.
-**
 **
 ** $QT_END_LICENSE$
 **
@@ -58,9 +50,13 @@
 
 #include <QtCore/qobject.h>
 #include <QtCore/qdatetime.h>
+#include <QtCore/qreadwritelock.h>
 #include <qmediaplayer.h>
 #include <pulse/pulseaudio.h>
 #include "qsamplecache_p.h"
+
+#include <private/qmediaresourcepolicy_p.h>
+#include <private/qmediaresourceset_p.h>
 
 QT_BEGIN_NAMESPACE
 
@@ -80,8 +76,8 @@ public:
     int loopCount() const;
     int loopsRemaining() const;
     void setLoopCount(int loopCount);
-    int volume() const;
-    void setVolume(int volume);
+    qreal volume() const;
+    void setVolume(qreal volume);
     bool isMuted() const;
     void setMuted(bool muted);
     bool isLoaded() const;
@@ -115,16 +111,24 @@ private Q_SLOTS:
     void underRun();
     void prepare();
     void streamReady();
-    void emptyComplete(void *stream);
-    void updateVolume();
-    void updateMuted();
+    void emptyComplete(void *stream, bool reload);
+
+    void handleAvailabilityChanged(bool available);
 
 private:
+    void playAvailable();
     void playSample();
 
-    void emptyStream();
+    enum EmptyStreamOption {
+        ReloadSampleWhenDone = 0x1
+    };
+    Q_DECLARE_FLAGS(EmptyStreamOptions, EmptyStreamOption)
+    void emptyStream(EmptyStreamOptions options = EmptyStreamOptions());
+
     void createPulseStream();
     void unloadPulseStream();
+
+    int writeToStream(const void *data, int size);
 
     void setPlaying(bool playing);
     void setStatus(QSoundEffect::Status status);
@@ -135,11 +139,10 @@ private:
     static void stream_underrun_callback(pa_stream *s, void *userdata);
     static void stream_cork_callback(pa_stream *s, int success, void *userdata);
     static void stream_flush_callback(pa_stream *s, int success, void *userdata);
+    static void stream_flush_reload_callback(pa_stream *s, int success, void *userdata);
     static void stream_write_done_callback(void *p);
     static void stream_adjust_prebuffer_callback(pa_stream *s, int success, void *userdata);
     static void stream_reset_buffer_callback(pa_stream *s, int success, void *userdata);
-    static void setvolume_callback(pa_context *c, int success, void *userdata);
-    static void setmuted_callback(pa_context *c, int success, void *userdata);
 
     pa_stream *m_pulseStream;
     int        m_sinkInputId;
@@ -153,7 +156,7 @@ private:
     bool    m_muted;
     bool    m_playQueued;
     bool    m_stopping;
-    int     m_volume;
+    qreal     m_volume;
     int     m_loopCount;
     int     m_runningCount;
     QUrl    m_source;
@@ -164,6 +167,12 @@ private:
     QSample *m_sample;
     int m_position;
     QSoundEffectRef *m_ref;
+
+    bool m_resourcesAvailable;
+
+    mutable QReadWriteLock m_volumeLock;
+
+    QMediaPlayerResourceSetInterface *m_resources;
 };
 
 QT_END_NAMESPACE

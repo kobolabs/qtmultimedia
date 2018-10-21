@@ -1,39 +1,31 @@
 /****************************************************************************
 **
-** Copyright (C) 2013 Digia Plc and/or its subsidiary(-ies).
-** Contact: http://www.qt-project.org/legal
+** Copyright (C) 2015 The Qt Company Ltd.
+** Contact: http://www.qt.io/licensing/
 **
 ** This file is part of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL$
+** $QT_BEGIN_LICENSE:LGPL21$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and Digia.  For licensing terms and
-** conditions see http://qt.digia.com/licensing.  For further information
-** use the contact form at http://qt.digia.com/contact-us.
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see http://www.qt.io/terms-conditions. For further
+** information use the contact form at http://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU Lesser General Public License version 2.1 requirements
-** will be met: http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 2.1 or version 3 as published by the Free
+** Software Foundation and appearing in the file LICENSE.LGPLv21 and
+** LICENSE.LGPLv3 included in the packaging of this file. Please review the
+** following information to ensure the GNU Lesser General Public License
+** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
+** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
 **
-** In addition, as a special exception, Digia gives you certain additional
-** rights.  These rights are described in the Digia Qt LGPL Exception
+** As a special exception, The Qt Company gives you certain additional
+** rights. These rights are described in The Qt Company LGPL Exception
 ** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3.0 as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU General Public License version 3.0 requirements will be
-** met: http://www.gnu.org/copyleft/gpl.html.
-**
 **
 ** $QT_END_LICENSE$
 **
@@ -43,14 +35,15 @@
 
 #include "qandroidmediaservice.h"
 #include "qandroidcaptureservice.h"
-#include "qandroidvideodeviceselectorcontrol.h"
 #include "qandroidaudioinputselectorcontrol.h"
-#include "jmediaplayer.h"
-#include "jsurfacetexture.h"
-#include "jsurfacetextureholder.h"
-#include "jcamera.h"
-#include "jmultimediautils.h"
-#include "jmediarecorder.h"
+#include "qandroidcamerainfocontrol.h"
+#include "qandroidcamerasession.h"
+#include "androidmediaplayer.h"
+#include "androidsurfacetexture.h"
+#include "androidcamera.h"
+#include "androidmultimediautils.h"
+#include "androidmediarecorder.h"
+#include "androidsurfaceview.h"
 #include <qdebug.h>
 
 QT_BEGIN_NAMESPACE
@@ -96,10 +89,23 @@ QMediaServiceProviderHint::Features QAndroidMediaServicePlugin::supportedFeature
     return QMediaServiceProviderHint::Features();
 }
 
+QByteArray QAndroidMediaServicePlugin::defaultDevice(const QByteArray &service) const
+{
+    if (service == Q_MEDIASERVICE_CAMERA && !QAndroidCameraSession::availableCameras().isEmpty())
+        return QAndroidCameraSession::availableCameras().first().name;
+
+    return QByteArray();
+}
+
 QList<QByteArray> QAndroidMediaServicePlugin::devices(const QByteArray &service) const
 {
-    if (service == Q_MEDIASERVICE_CAMERA)
-        return QAndroidVideoDeviceSelectorControl::availableDevices();
+    if (service == Q_MEDIASERVICE_CAMERA) {
+        QList<QByteArray> devices;
+        const QList<AndroidCameraInfo> &cameras = QAndroidCameraSession::availableCameras();
+        for (int i = 0; i < cameras.count(); ++i)
+            devices.append(cameras.at(i).name);
+        return devices;
+    }
 
     if (service == Q_MEDIASERVICE_AUDIOSOURCE)
         return QAndroidAudioInputSelectorControl::availableDevices();
@@ -109,8 +115,14 @@ QList<QByteArray> QAndroidMediaServicePlugin::devices(const QByteArray &service)
 
 QString QAndroidMediaServicePlugin::deviceDescription(const QByteArray &service, const QByteArray &device)
 {
-    if (service == Q_MEDIASERVICE_CAMERA)
-        return QAndroidVideoDeviceSelectorControl::availableDeviceDescription(device);
+    if (service == Q_MEDIASERVICE_CAMERA) {
+        const QList<AndroidCameraInfo> &cameras = QAndroidCameraSession::availableCameras();
+        for (int i = 0; i < cameras.count(); ++i) {
+            const AndroidCameraInfo &info = cameras.at(i);
+            if (info.name == device)
+                return info.description;
+        }
+    }
 
     if (service == Q_MEDIASERVICE_AUDIOSOURCE)
         return QAndroidAudioInputSelectorControl::availableDeviceDescription(device);
@@ -118,9 +130,27 @@ QString QAndroidMediaServicePlugin::deviceDescription(const QByteArray &service,
     return QString();
 }
 
+QCamera::Position QAndroidMediaServicePlugin::cameraPosition(const QByteArray &device) const
+{
+    return QAndroidCameraInfoControl::position(device);
+}
 
+int QAndroidMediaServicePlugin::cameraOrientation(const QByteArray &device) const
+{
+    return QAndroidCameraInfoControl::orientation(device);
+}
+
+QT_END_NAMESPACE
+
+#ifndef Q_OS_ANDROID_NO_SDK
 Q_DECL_EXPORT jint JNICALL JNI_OnLoad(JavaVM *vm, void * /*reserved*/)
 {
+    static bool initialized = false;
+    if (initialized)
+        return JNI_VERSION_1_6;
+    initialized = true;
+
+    QT_USE_NAMESPACE
     typedef union {
         JNIEnv *nativeEnvironment;
         void *venv;
@@ -134,16 +164,15 @@ Q_DECL_EXPORT jint JNICALL JNI_OnLoad(JavaVM *vm, void * /*reserved*/)
 
     JNIEnv *jniEnv = uenv.nativeEnvironment;
 
-    if (!JMediaPlayer::initJNI(jniEnv) ||
-        !JSurfaceTexture::initJNI(jniEnv) ||
-        !JSurfaceTextureHolder::initJNI(jniEnv) ||
-        !JCamera::initJNI(jniEnv) ||
-        !JMultimediaUtils::initJNI(jniEnv) ||
-        !JMediaRecorder::initJNI(jniEnv)) {
+    if (!AndroidMediaPlayer::initJNI(jniEnv) ||
+        !AndroidCamera::initJNI(jniEnv) ||
+        !AndroidMediaRecorder::initJNI(jniEnv) ||
+        !AndroidSurfaceHolder::initJNI(jniEnv)) {
         return JNI_ERR;
     }
 
+    AndroidSurfaceTexture::initJNI(jniEnv);
+
     return JNI_VERSION_1_4;
 }
-
-QT_END_NAMESPACE
+#endif // Q_OS_ANDROID_NO_SDK

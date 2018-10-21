@@ -1,39 +1,31 @@
 /****************************************************************************
 **
-** Copyright (C) 2013 Digia Plc and/or its subsidiary(-ies).
-** Contact: http://www.qt-project.org/legal
+** Copyright (C) 2015 The Qt Company Ltd.
+** Contact: http://www.qt.io/licensing/
 **
 ** This file is part of the plugins of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL$
+** $QT_BEGIN_LICENSE:LGPL21$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and Digia.  For licensing terms and
-** conditions see http://qt.digia.com/licensing.  For further information
-** use the contact form at http://qt.digia.com/contact-us.
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see http://www.qt.io/terms-conditions. For further
+** information use the contact form at http://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU Lesser General Public License version 2.1 requirements
-** will be met: http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 2.1 or version 3 as published by the Free
+** Software Foundation and appearing in the file LICENSE.LGPLv21 and
+** LICENSE.LGPLv3 included in the packaging of this file. Please review the
+** following information to ensure the GNU Lesser General Public License
+** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
+** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
 **
-** In addition, as a special exception, Digia gives you certain additional
-** rights.  These rights are described in the Digia Qt LGPL Exception
+** As a special exception, The Qt Company gives you certain additional
+** rights. These rights are described in The Qt Company LGPL Exception
 ** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3.0 as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU General Public License version 3.0 requirements will be
-** met: http://www.gnu.org/copyleft/gpl.html.
-**
 **
 ** $QT_END_LICENSE$
 **
@@ -57,15 +49,10 @@ QT_USE_NAMESPACE
     \inherits Item
     \preliminary
 
-    This type is part of the \b{QtAudioEngine 1.0} module.
-
     AudioListener will have only one global instance and you can either access it through the
     listener property of AudioEngine:
 
     \qml
-    import QtQuick 2.0
-    import QtAudioEngine 1.0
-
     Rectangle {
         color:"white"
         width: 300
@@ -88,11 +75,10 @@ QT_USE_NAMESPACE
                 loops: Animation.Infinite
                 running: true
                 NumberAnimation {
-                duration: 8000
-                from: 0
-                to: 1
+                    duration: 8000
+                    from: 0
+                    to: 1
                 }
-
             }
         }
     }
@@ -101,9 +87,6 @@ QT_USE_NAMESPACE
     or alternatively, by defining an AudioListener outside AudioEngine:
 
     \qml
-    import QtQuick 2.0
-    import QtAudioEngine 1.0
-
     Rectangle {
         color:"white"
         width: 300
@@ -130,17 +113,16 @@ QT_USE_NAMESPACE
                 loops: Animation.Infinite
                 running: true
                 NumberAnimation {
-                duration: 8000
-                from: 0
-                to: 1
+                    duration: 8000
+                    from: 0
+                    to: 1
                 }
-
             }
         }
     }
     \endqml
 
-    This separate AudioListener definition is allowed to make qml bindings easier in some case.
+    This separate AudioListener definition is allowed to make QML bindings easier in some cases.
 */
 
 QDeclarativeAudioListener::QDeclarativeAudioListener(QObject *parent)
@@ -155,9 +137,9 @@ QDeclarativeAudioListener::~QDeclarativeAudioListener()
 }
 
 /*!
-    \qmlproperty QtAudioEngine1::AudioEngine QtAudioEngine1::AudioListener::engine
+    \qmlproperty QtAudioEngine::AudioEngine QtAudioEngine::AudioListener::engine
 
-    This property holds the reference to AudioEngine, must be set only once.
+    This property holds the reference to AudioEngine, and must only be set once.
 */
 QDeclarativeAudioEngine* QDeclarativeAudioListener::engine() const
 {
@@ -171,9 +153,9 @@ void QDeclarativeAudioListener::setEngine(QDeclarativeAudioEngine *engine)
 }
 
 /*!
-    \qmlproperty vector3d QtAudioEngine1::AudioListener::position
+    \qmlproperty vector3d QtAudioEngine::AudioListener::position
 
-    This property holds the 3d position of the listener.
+    This property holds the 3D position of the listener.
 */
 QVector3D QDeclarativeAudioListener::position() const
 {
@@ -190,9 +172,9 @@ void QDeclarativeAudioListener::setPosition(const QVector3D &position)
 }
 
 /*!
-    \qmlproperty vector3d QtAudioEngine1::AudioListener::direction
+    \qmlproperty vector3d QtAudioEngine::AudioListener::direction
 
-    This property holds the normalized 3d direction vector of the listener.
+    This property holds the normalized 3D direction vector of the listener.
 */
 QVector3D QDeclarativeAudioListener::direction() const
 {
@@ -209,9 +191,9 @@ void QDeclarativeAudioListener::setDirection(const QVector3D &direction)
 }
 
 /*!
-    \qmlproperty vector3d QtAudioEngine1::AudioListener::velocity
+    \qmlproperty vector3d QtAudioEngine::AudioListener::velocity
 
-    This property holds the 3d velocity vector of the listener.
+    This property holds the 3D velocity vector of the listener.
 */
 QVector3D QDeclarativeAudioListener::velocity() const
 {
@@ -228,9 +210,9 @@ void QDeclarativeAudioListener::setVelocity(const QVector3D &velocity)
 }
 
 /*!
-    \qmlproperty vector3d QtAudioEngine1::AudioListener::up
+    \qmlproperty vector3d QtAudioEngine::AudioListener::up
 
-    This property holds the normalized 3d up vector of the listener.
+    This property holds the normalized 3D up vector of the listener.
 */
 QVector3D QDeclarativeAudioListener::up() const
 {
@@ -247,7 +229,7 @@ void QDeclarativeAudioListener::setUp(const QVector3D &up)
 }
 
 /*!
-    \qmlproperty real QtAudioEngine1::AudioListener::gain
+    \qmlproperty real QtAudioEngine::AudioListener::gain
 
     This property will modulate all audio output from audio engine instances.
 */

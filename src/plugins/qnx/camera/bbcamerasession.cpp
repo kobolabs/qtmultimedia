@@ -1,39 +1,31 @@
 /****************************************************************************
 **
 ** Copyright (C) 2013 Research In Motion
-** Contact: http://www.qt-project.org/legal
+** Contact: http://www.qt.io/licensing/
 **
 ** This file is part of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL$
+** $QT_BEGIN_LICENSE:LGPL21$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and Digia.  For licensing terms and
-** conditions see http://qt.digia.com/licensing.  For further information
-** use the contact form at http://qt.digia.com/contact-us.
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see http://www.qt.io/terms-conditions. For further
+** information use the contact form at http://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU Lesser General Public License version 2.1 requirements
-** will be met: http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 2.1 or version 3 as published by the Free
+** Software Foundation and appearing in the file LICENSE.LGPLv21 and
+** LICENSE.LGPLv3 included in the packaging of this file. Please review the
+** following information to ensure the GNU Lesser General Public License
+** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
+** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
 **
-** In addition, as a special exception, Digia gives you certain additional
-** rights.  These rights are described in the Digia Qt LGPL Exception
+** As a special exception, The Qt Company gives you certain additional
+** rights. These rights are described in The Qt Company LGPL Exception
 ** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3.0 as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU General Public License version 3.0 requirements will be
-** met: http://www.gnu.org/copyleft/gpl.html.
-**
 **
 ** $QT_END_LICENSE$
 **
@@ -64,7 +56,7 @@ static QString errorToString(camera_error_t error)
     case CAMERA_EAGAIN:
         return QLatin1String("Camera unavailable");
     case CAMERA_EINVAL:
-        return QLatin1String("Inavlid argument");
+        return QLatin1String("Invalid argument");
     case CAMERA_ENODEV:
         return QLatin1String("Camera not found");
     case CAMERA_EMFILE:
@@ -91,12 +83,20 @@ static QString errorToString(camera_error_t error)
         return QLatin1String("Callback registration failed");
     case CAMERA_EMICINUSE:
         return QLatin1String("Microphone in use already");
-#ifndef Q_OS_BLACKBERRY_TABLET
+    case CAMERA_ENODATA:
+        return QLatin1String("Data does not exist");
+    case CAMERA_EBUSY:
+        return QLatin1String("Camera busy");
     case CAMERA_EDESKTOPCAMERAINUSE:
         return QLatin1String("Desktop camera in use already");
     case CAMERA_ENOSPC:
         return QLatin1String("Disk is full");
-#endif
+    case CAMERA_EPOWERDOWN:
+        return QLatin1String("Camera in power down state");
+    case CAMERA_3ALOCKED:
+        return QLatin1String("3A have been locked");
+//  case CAMERA_EVIEWFINDERFROZEN: // not yet available in 10.2 NDK
+//      return QLatin1String("Freeze flag set");
     default:
         return QLatin1String("Unknown error");
     }
@@ -130,7 +130,7 @@ BbCameraSession::BbCameraSession(QObject *parent)
     connect(this, SIGNAL(captureModeChanged(QCamera::CaptureModes)), SLOT(updateReadyForCapture()));
     connect(m_orientationHandler, SIGNAL(orientationChanged(int)), SLOT(deviceOrientationChanged(int)));
 
-    connect(m_windowGrabber, SIGNAL(frameGrabbed(QImage)), SLOT(viewfinderFrameGrabbed(QImage)));
+    connect(m_windowGrabber, SIGNAL(frameGrabbed(QImage, int)), SLOT(viewfinderFrameGrabbed(QImage)));
 }
 
 BbCameraSession::~BbCameraSession()
@@ -559,7 +559,6 @@ void BbCameraSession::applyVideoSettings()
 
     const QSize resolution = m_videoEncoderSettings.resolution();
 
-#ifndef Q_OS_BLACKBERRY_TABLET
     QString videoCodec = m_videoEncoderSettings.codec();
     if (videoCodec.isEmpty())
         videoCodec = QLatin1String("h264");
@@ -597,11 +596,6 @@ void BbCameraSession::applyVideoSettings()
                                        CAMERA_IMGPROP_ROTATION, rotationAngle,
                                        CAMERA_IMGPROP_VIDEOCODEC, cameraVideoCodec,
                                        CAMERA_IMGPROP_AUDIOCODEC, cameraAudioCodec);
-#else
-    result = camera_set_video_property(m_handle,
-                                       CAMERA_IMGPROP_WIDTH, resolution.width(),
-                                       CAMERA_IMGPROP_HEIGHT, resolution.height());
-#endif
 
     if (result != CAMERA_EOK) {
         qWarning() << "Unable to apply video settings:" << result;
@@ -762,11 +756,16 @@ void BbCameraSession::viewfinderFrameGrabbed(const QImage &image)
 {
     QTransform transform;
 
+    // subtract out the native rotation
     transform.rotate(m_nativeCameraOrientation);
 
+    // subtract out the current device orientation
+    if (m_device == cameraIdentifierRear())
+        transform.rotate(360 - m_orientationHandler->viewfinderOrientation());
+    else
+        transform.rotate(m_orientationHandler->viewfinderOrientation());
+
     QImage frame = image.copy().transformed(transform);
-    if (m_device == cameraIdentifierFront())
-        frame = frame.mirrored(true, false);
 
     QMutexLocker locker(&m_surfaceMutex);
     if (m_surface) {
@@ -857,13 +856,10 @@ static void viewFinderStatusCallback(camera_handle_t handle, camera_devstatus_t 
         BbCameraSession *session = static_cast<BbCameraSession*>(context);
         QMetaObject::invokeMethod(session, "focusStatusChanged", Qt::QueuedConnection, Q_ARG(int, value));
         return;
-    }
-#ifndef Q_OS_BLACKBERRY_TABLET
-    else if (status == CAMERA_STATUS_POWERUP) {
+    } else if (status == CAMERA_STATUS_POWERUP) {
         BbCameraSession *session = static_cast<BbCameraSession*>(context);
         QMetaObject::invokeMethod(session, "handleCameraPowerUp", Qt::QueuedConnection);
     }
-#endif
 }
 
 bool BbCameraSession::startViewFinder()
@@ -886,7 +882,7 @@ bool BbCameraSession::startViewFinder()
         return false;
     }
 
-    const int angle = m_orientationHandler->orientation();
+    const int angle = m_orientationHandler->viewfinderOrientation();
 
     const QSize rotatedSize = ((angle == 0 || angle == 180) ? viewfinderResolution
                                                             : viewfinderResolution.transposed());
@@ -1020,7 +1016,6 @@ static void videoRecordingStatusCallback(camera_handle_t handle, camera_devstatu
     Q_UNUSED(handle)
     Q_UNUSED(value)
 
-#ifndef Q_OS_BLACKBERRY_TABLET
     if (status == CAMERA_STATUS_VIDEO_PAUSE) {
         BbCameraSession *session = static_cast<BbCameraSession*>(context);
         QMetaObject::invokeMethod(session, "handleVideoRecordingPaused", Qt::QueuedConnection);
@@ -1028,7 +1023,6 @@ static void videoRecordingStatusCallback(camera_handle_t handle, camera_devstatu
         BbCameraSession *session = static_cast<BbCameraSession*>(context);
         QMetaObject::invokeMethod(session, "handleVideoRecordingResumed", Qt::QueuedConnection);
     }
-#endif
 }
 
 bool BbCameraSession::startVideoRecording()

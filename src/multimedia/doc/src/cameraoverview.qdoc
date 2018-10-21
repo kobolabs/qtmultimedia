@@ -1,7 +1,7 @@
 /****************************************************************************
 **
-** Copyright (C) 2013 Digia Plc and/or its subsidiary(-ies).
-** Contact: http://www.qt-project.org/legal
+** Copyright (C) 2015 The Qt Company Ltd.
+** Contact: http://www.qt.io/licensing/
 **
 ** This file is part of the documentation of the Qt Toolkit.
 **
@@ -10,15 +10,15 @@
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and Digia.  For licensing terms and
-** conditions see http://qt.digia.com/licensing.  For further information
-** use the contact form at http://qt.digia.com/contact-us.
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see http://www.qt.io/terms-conditions. For further
+** information use the contact form at http://www.qt.io/contact-us.
 **
 ** GNU Free Documentation License Usage
 ** Alternatively, this file may be used under the terms of the GNU Free
 ** Documentation License version 1.3 as published by the Free Software
 ** Foundation and appearing in the file included in the packaging of
-** this file.  Please review the following information to ensure
+** this file. Please review the following information to ensure
 ** the GNU Free Documentation License version 1.3 requirements
 ** will be met: http://www.gnu.org/copyleft/fdl.html.
 ** $QT_END_LICENSE$
@@ -90,6 +90,62 @@ Many of these tasks have classes to assist them.
 
 \target camera-tldr
 \section1 Camera Implementation Details
+\section2 Detecting and Selecting Camera
+
+Before using the camera APIs, you should check that a camera is available at runtime. If there
+is none, you could for example disable camera related features in your application. To perform this
+check in C++, use the \l QCameraInfo::availableCameras() function, as shown in the example below:
+
+    \snippet multimedia-snippets/camera.cpp Camera overview check
+
+In QML, use the \l{QtMultimedia::QtMultimedia::availableCameras}{QtMultimedia.availableCameras}
+property:
+
+\qml
+Item {
+    property bool isCameraAvailable: QtMultimedia.availableCameras.length > 0
+}
+\endqml
+
+After determining whether a camera is available, access it using the \l QCamera class in C++ or
+the \l Camera type in QML.
+
+When multiple cameras are available, you can specify which one to use.
+
+In C++:
+
+     \snippet multimedia-snippets/camera.cpp Camera selection
+
+In QML, you can set the \c Camera \l{Camera::deviceId}{deviceId} property. All available IDs can
+be retrieved from \l{QtMultimedia::QtMultimedia::availableCameras}{QtMultimedia.availableCameras}:
+
+\qml
+Camera {
+    deviceId: QtMultimedia.availableCameras[0].deviceId
+}
+\endqml
+
+You can also select the camera by its physical position on the system rather than its device ID.
+This is useful on mobile devices, which often have a front-facing and a back-facing camera.
+
+In C++:
+
+    \snippet multimedia-snippets/camera.cpp Camera overview position
+
+In QML:
+
+\qml
+Camera {
+    position: Camera.FrontFace
+}
+\endqml
+
+If neither device ID nor position is specified, the default camera will be used. On desktop
+platforms, the default camera is set by the user in the system settings. On a mobile device, the
+back-facing camera is usually the default camera. You can get information about the default camera
+using \l QCameraInfo::defaultCamera() in C++ or
+\l{QtMultimedia::QtMultimedia::defaultCamera}{QtMultimedia.defaultCamera} in QML.
+
 \section2 Viewfinder
 
 While not strictly necessary, it's often useful to be able to see
@@ -104,9 +160,6 @@ In QML, you can use \l Camera and \l VideoOutput together to show a
 simple viewfinder:
 
 \qml
-import QtQuick 2.0
-import QtMultimedia 5.0
-
 VideoOutput {
     source: camera
 
@@ -118,7 +171,7 @@ VideoOutput {
 \endqml
 
 In C++, your choice depends on whether you are using widgets, or QGraphicsView.
-The \l QVideoWidget class is used in the widgets case, and \l QGraphicsVideoItem
+The \l QCameraViewfinder class is used in the widgets case, and \l QGraphicsVideoItem
 is useful for QGraphicsView.
 
     \snippet multimedia-snippets/camera.cpp Camera overview viewfinder
@@ -129,6 +182,15 @@ set that as the viewfinder for the QCamera object.  In this case you will
 need to render the viewfinder image yourself.
 
     \snippet multimedia-snippets/camera.cpp Camera overview surface
+
+On mobile devices, the viewfinder image might not always be in the orientation you would expect.
+The camera sensors on these devices are often mounted in landscape while the natural
+orientation of the screen is portrait. This results in the image appearing sideways or inverted
+depending on the device orientation. In order to reflect on screen what the user actually sees, you
+should make sure the viewfinder frames are always rotated to the correct orientation, taking into
+account the camera sensor orientation and the current display orientation.
+
+    \snippet multimedia-snippets/camera.cpp Camera overview viewfinder orientation
 
 \section2 Still Images
 

@@ -1,39 +1,31 @@
 /****************************************************************************
 **
-** Copyright (C) 2013 Digia Plc and/or its subsidiary(-ies).
-** Contact: http://www.qt-project.org/legal
+** Copyright (C) 2015 The Qt Company Ltd.
+** Contact: http://www.qt.io/licensing/
 **
 ** This file is part of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL$
+** $QT_BEGIN_LICENSE:LGPL21$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and Digia.  For licensing terms and
-** conditions see http://qt.digia.com/licensing.  For further information
-** use the contact form at http://qt.digia.com/contact-us.
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see http://www.qt.io/terms-conditions. For further
+** information use the contact form at http://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU Lesser General Public License version 2.1 requirements
-** will be met: http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 2.1 or version 3 as published by the Free
+** Software Foundation and appearing in the file LICENSE.LGPLv21 and
+** LICENSE.LGPLv3 included in the packaging of this file. Please review the
+** following information to ensure the GNU Lesser General Public License
+** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
+** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
 **
-** In addition, as a special exception, Digia gives you certain additional
-** rights.  These rights are described in the Digia Qt LGPL Exception
+** As a special exception, The Qt Company gives you certain additional
+** rights. These rights are described in The Qt Company LGPL Exception
 ** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3.0 as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU General Public License version 3.0 requirements will be
-** met: http://www.gnu.org/copyleft/gpl.html.
-**
 **
 ** $QT_END_LICENSE$
 **
@@ -49,19 +41,14 @@
 
 QT_BEGIN_NAMESPACE
 
-namespace
+static void qRegisterVideoSurfaceFormatMetaTypes()
 {
-    class QVideoSurfaceFormatPrivateRegisterMetaTypes
-    {
-    public:
-        QVideoSurfaceFormatPrivateRegisterMetaTypes()
-        {
-            qRegisterMetaType<QVideoSurfaceFormat>();
-            qRegisterMetaType<QVideoSurfaceFormat::Direction>();
-            qRegisterMetaType<QVideoSurfaceFormat::YCbCrColorSpace>();
-        }
-    } _registerMetaTypes;
+    qRegisterMetaType<QVideoSurfaceFormat>();
+    qRegisterMetaType<QVideoSurfaceFormat::Direction>();
+    qRegisterMetaType<QVideoSurfaceFormat::YCbCrColorSpace>();
 }
+
+Q_CONSTRUCTOR_FUNCTION(qRegisterVideoSurfaceFormatMetaTypes)
 
 
 class QVideoSurfaceFormatPrivate : public QSharedData
@@ -74,6 +61,7 @@ public:
         , pixelAspectRatio(1, 1)
         , ycbcrColorSpace(QVideoSurfaceFormat::YCbCr_Undefined)
         , frameRate(0.0)
+        , mirrored(false)
     {
     }
 
@@ -89,6 +77,7 @@ public:
         , ycbcrColorSpace(QVideoSurfaceFormat::YCbCr_Undefined)
         , viewport(QPoint(0, 0), size)
         , frameRate(0.0)
+        , mirrored(false)
     {
     }
 
@@ -102,6 +91,7 @@ public:
         , ycbcrColorSpace(other.ycbcrColorSpace)
         , viewport(other.viewport)
         , frameRate(other.frameRate)
+        , mirrored(other.mirrored)
         , propertyNames(other.propertyNames)
         , propertyValues(other.propertyValues)
     {
@@ -117,6 +107,7 @@ public:
             && viewport == other.viewport
             && frameRatesEqual(frameRate, other.frameRate)
             && ycbcrColorSpace == other.ycbcrColorSpace
+            && mirrored == other.mirrored
             && propertyNames.count() == other.propertyNames.count()) {
             for (int i = 0; i < propertyNames.count(); ++i) {
                 int j = other.propertyNames.indexOf(propertyNames.at(i));
@@ -143,6 +134,7 @@ public:
     QVideoSurfaceFormat::YCbCrColorSpace ycbcrColorSpace;
     QRect viewport;
     qreal frameRate;
+    bool mirrored;
     QList<QByteArray> propertyNames;
     QList<QVariant> propertyValues;
 };
@@ -481,7 +473,8 @@ QList<QByteArray> QVideoSurfaceFormat::propertyNames() const
             << "frameRate"
             << "pixelAspectRatio"
             << "sizeHint"
-            << "yCbCrColorSpace")
+            << "yCbCrColorSpace"
+            << "mirrored")
             + d->propertyNames;
 }
 
@@ -512,6 +505,8 @@ QVariant QVideoSurfaceFormat::property(const char *name) const
         return sizeHint();
     } else if (qstrcmp(name, "yCbCrColorSpace") == 0) {
         return qVariantFromValue(d->ycbcrColorSpace);
+    } else if (qstrcmp(name, "mirrored") == 0) {
+        return d->mirrored;
     } else {
         int id = 0;
         for (; id < d->propertyNames.count() && d->propertyNames.at(id) != name; ++id) {}
@@ -560,6 +555,9 @@ void QVideoSurfaceFormat::setProperty(const char *name, const QVariant &value)
     } else if (qstrcmp(name, "yCbCrColorSpace") == 0) {
           if (value.canConvert<YCbCrColorSpace>())
               d->ycbcrColorSpace = qvariant_cast<YCbCrColorSpace>(value);
+    } else if (qstrcmp(name, "mirrored") == 0) {
+        if (value.canConvert<bool>())
+            d->mirrored = qvariant_cast<bool>(value);
     } else {
         int id = 0;
         for (; id < d->propertyNames.count() && d->propertyNames.at(id) != name; ++id) {}
@@ -582,61 +580,62 @@ void QVideoSurfaceFormat::setProperty(const char *name, const QVariant &value)
 #ifndef QT_NO_DEBUG_STREAM
 QDebug operator<<(QDebug dbg, QVideoSurfaceFormat::YCbCrColorSpace cs)
 {
-    QDebug nospace = dbg.nospace();
+    QDebugStateSaver saver(dbg);
+    dbg.nospace();
     switch (cs) {
         case QVideoSurfaceFormat::YCbCr_BT601:
-            nospace << "YCbCr_BT601";
+            dbg << "YCbCr_BT601";
             break;
         case QVideoSurfaceFormat::YCbCr_BT709:
-            nospace << "YCbCr_BT709";
+            dbg << "YCbCr_BT709";
             break;
         case QVideoSurfaceFormat::YCbCr_JPEG:
-            nospace << "YCbCr_JPEG";
+            dbg << "YCbCr_JPEG";
             break;
         case QVideoSurfaceFormat::YCbCr_xvYCC601:
-            nospace << "YCbCr_xvYCC601";
+            dbg << "YCbCr_xvYCC601";
             break;
         case QVideoSurfaceFormat::YCbCr_xvYCC709:
-            nospace << "YCbCr_xvYCC709";
+            dbg << "YCbCr_xvYCC709";
             break;
         case QVideoSurfaceFormat::YCbCr_CustomMatrix:
-            nospace << "YCbCr_CustomMatrix";
+            dbg << "YCbCr_CustomMatrix";
             break;
         default:
-            nospace << "YCbCr_Undefined";
+            dbg << "YCbCr_Undefined";
             break;
     }
-    return nospace;
+    return dbg;
 }
 
 QDebug operator<<(QDebug dbg, QVideoSurfaceFormat::Direction dir)
 {
-    QDebug nospace = dbg.nospace();
+    QDebugStateSaver saver(dbg);
+    dbg.nospace();
     switch (dir) {
         case QVideoSurfaceFormat::BottomToTop:
-            nospace << "BottomToTop";
+            dbg << "BottomToTop";
             break;
         case QVideoSurfaceFormat::TopToBottom:
-            nospace << "TopToBottom";
+            dbg << "TopToBottom";
             break;
     }
-    return nospace;
+    return dbg;
 }
 
 QDebug operator<<(QDebug dbg, const QVideoSurfaceFormat &f)
 {
-    dbg.nospace() << "QVideoSurfaceFormat(" << f.pixelFormat();
-    dbg.nospace() << ", " << f.frameSize();
-    dbg.nospace() << ", viewport=" << f.viewport();
-    dbg.nospace() << ", pixelAspectRatio=" << f.pixelAspectRatio();
-    dbg.nospace() << ", handleType=" << f.handleType();
-    dbg.nospace() << ", yCbCrColorSpace=" << f.yCbCrColorSpace();
-    dbg.nospace() << ")";
+    QDebugStateSaver saver(dbg);
+    dbg.nospace();
+    dbg << "QVideoSurfaceFormat(" << f.pixelFormat() << ", " << f.frameSize()
+        << ", viewport=" << f.viewport() << ", pixelAspectRatio=" << f.pixelAspectRatio()
+        << ", handleType=" << f.handleType() <<  ", yCbCrColorSpace=" << f.yCbCrColorSpace()
+        << ')';
 
     foreach(const QByteArray& propertyName, f.propertyNames())
         dbg << "\n    " << propertyName.data() << " = " << f.property(propertyName.data());
 
-    return dbg.space();
+    return dbg;
 }
 #endif
 

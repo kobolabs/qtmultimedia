@@ -1,39 +1,31 @@
 /****************************************************************************
 **
-** Copyright (C) 2013 Digia Plc and/or its subsidiary(-ies).
-** Contact: http://www.qt-project.org/legal
+** Copyright (C) 2015 The Qt Company Ltd.
+** Contact: http://www.qt.io/licensing/
 **
 ** This file is part of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL$
+** $QT_BEGIN_LICENSE:LGPL21$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and Digia.  For licensing terms and
-** conditions see http://qt.digia.com/licensing.  For further information
-** use the contact form at http://qt.digia.com/contact-us.
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see http://www.qt.io/terms-conditions. For further
+** information use the contact form at http://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU Lesser General Public License version 2.1 requirements
-** will be met: http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 2.1 or version 3 as published by the Free
+** Software Foundation and appearing in the file LICENSE.LGPLv21 and
+** LICENSE.LGPLv3 included in the packaging of this file. Please review the
+** following information to ensure the GNU Lesser General Public License
+** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
+** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
 **
-** In addition, as a special exception, Digia gives you certain additional
-** rights.  These rights are described in the Digia Qt LGPL Exception
+** As a special exception, The Qt Company gives you certain additional
+** rights. These rights are described in The Qt Company LGPL Exception
 ** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3.0 as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU General Public License version 3.0 requirements will be
-** met: http://www.gnu.org/copyleft/gpl.html.
-**
 **
 ** $QT_END_LICENSE$
 **
@@ -50,18 +42,6 @@
 #include <QtCore/qfile.h>
 #include <QtCore/qmetaobject.h>
 
-#include <linux/types.h>
-#include <sys/time.h>
-#include <sys/ioctl.h>
-#include <sys/poll.h>
-#include <unistd.h>
-#include <fcntl.h>
-#include <errno.h>
-#include <string.h>
-#include <stdlib.h>
-#include <sys/mman.h>
-#include <linux/videodev2.h>
-
 QT_BEGIN_NAMESPACE
 
 //#define CAMEABIN_DEBUG 1
@@ -71,11 +51,10 @@ CameraBinControl::CameraBinControl(CameraBinSession *session)
     :QCameraControl(session),
     m_session(session),
     m_state(QCamera::UnloadedState),
-    m_status(QCamera::UnloadedStatus),
     m_reloadPending(false)
 {
-    connect(m_session, SIGNAL(stateChanged(QCamera::State)),
-            this, SLOT(updateStatus()));
+    connect(m_session, SIGNAL(statusChanged(QCamera::Status)),
+            this, SIGNAL(statusChanged(QCamera::Status)));
 
     connect(m_session, SIGNAL(viewfinderChanged()),
             SLOT(reloadLater()));
@@ -115,10 +94,6 @@ void CameraBinControl::setCaptureMode(QCamera::CaptureModes mode)
                         captureMode() == QCamera::CaptureStillImage ?
                             CamerabinResourcePolicy::ImageCaptureResources :
                             CamerabinResourcePolicy::VideoCaptureResources);
-
-            //due to bug in v4l2src, it's necessary to reload camera on video caps changes
-            //https://bugzilla.gnome.org/show_bug.cgi?id=649832
-            reloadLater();
         }
         emit captureModeChanged(mode);
     }
@@ -140,7 +115,7 @@ void CameraBinControl::setState(QCamera::State state)
         //special case for stopping the camera while it's busy,
         //it should be delayed until the camera is idle
         if (state == QCamera::LoadedState &&
-                m_session->state() == QCamera::ActiveState &&
+                m_session->status() == QCamera::ActiveStatus &&
                 m_session->isBusy()) {
 #ifdef CAMEABIN_DEBUG
             qDebug() << Q_FUNC_INFO << "Camera is busy, QCamera::stop() is delayed";
@@ -189,48 +164,9 @@ QCamera::State CameraBinControl::state() const
     return m_state;
 }
 
-void CameraBinControl::updateStatus()
+QCamera::Status CameraBinControl::status() const
 {
-    QCamera::State sessionState = m_session->state();
-    QCamera::Status oldStatus = m_status;
-
-    switch (m_state) {
-    case QCamera::UnloadedState:
-        m_status = QCamera::UnloadedStatus;
-        break;
-    case QCamera::LoadedState:
-        switch (sessionState) {
-        case QCamera::UnloadedState:
-            m_status = QCamera::LoadingStatus;
-            break;
-        case QCamera::LoadedState:
-            m_status = QCamera::LoadedStatus;
-            break;
-        case QCamera::ActiveState:
-            m_status = QCamera::ActiveStatus;
-            break;
-        }
-        break;
-    case QCamera::ActiveState:
-        switch (sessionState) {
-        case QCamera::UnloadedState:
-            m_status = QCamera::LoadingStatus;
-            break;
-        case QCamera::LoadedState:
-            m_status = QCamera::StartingStatus;
-            break;
-        case QCamera::ActiveState:
-            m_status = QCamera::ActiveStatus;
-            break;
-        }
-    }
-
-    if (m_status != oldStatus) {
-#ifdef CAMEABIN_DEBUG
-        qDebug() << "Camera status changed" << ENUM_NAME(QCamera, "Status", m_status);
-#endif
-        emit statusChanged(m_status);
-    }
+    return m_session->status();
 }
 
 void CameraBinControl::reloadLater()
@@ -274,7 +210,7 @@ void CameraBinControl::handleResourcesGranted()
 
 void CameraBinControl::handleBusyChanged(bool busy)
 {
-    if (!busy && m_session->state() == QCamera::ActiveState) {
+    if (!busy && m_session->status() == QCamera::ActiveStatus) {
         if (m_state == QCamera::LoadedState) {
             //handle delayed stop() because of busy camera
             m_resourcePolicy->setResourceSet(CamerabinResourcePolicy::LoadedResources);
@@ -313,13 +249,14 @@ bool CameraBinControl::canChangeProperty(PropertyChangeType changeType, QCamera:
     Q_UNUSED(status);
 
     switch (changeType) {
+    case QCameraControl::Viewfinder:
+        return true;
     case QCameraControl::CaptureMode:
     case QCameraControl::ImageEncodingSettings:
     case QCameraControl::VideoEncodingSettings:
-    case QCameraControl::Viewfinder:
-        return true;
+    case QCameraControl::ViewfinderSettings:
     default:
-        return false;
+        return status != QCamera::ActiveStatus;
     }
 }
 

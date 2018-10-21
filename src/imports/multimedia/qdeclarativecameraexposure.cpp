@@ -1,39 +1,31 @@
 /****************************************************************************
 **
-** Copyright (C) 2013 Digia Plc and/or its subsidiary(-ies).
-** Contact: http://www.qt-project.org/legal
+** Copyright (C) 2015 The Qt Company Ltd.
+** Contact: http://www.qt.io/licensing/
 **
 ** This file is part of the plugins of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL$
+** $QT_BEGIN_LICENSE:LGPL21$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and Digia.  For licensing terms and
-** conditions see http://qt.digia.com/licensing.  For further information
-** use the contact form at http://qt.digia.com/contact-us.
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see http://www.qt.io/terms-conditions. For further
+** information use the contact form at http://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU Lesser General Public License version 2.1 requirements
-** will be met: http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 2.1 or version 3 as published by the Free
+** Software Foundation and appearing in the file LICENSE.LGPLv21 and
+** LICENSE.LGPLv3 included in the packaging of this file. Please review the
+** following information to ensure the GNU Lesser General Public License
+** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
+** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
 **
-** In addition, as a special exception, Digia gives you certain additional
-** rights.  These rights are described in the Digia Qt LGPL Exception
+** As a special exception, The Qt Company gives you certain additional
+** rights. These rights are described in The Qt Company LGPL Exception
 ** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3.0 as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU General Public License version 3.0 requirements will be
-** met: http://www.gnu.org/copyleft/gpl.html.
-**
 **
 ** $QT_END_LICENSE$
 **
@@ -52,8 +44,6 @@ QT_BEGIN_NAMESPACE
     \ingroup camera_qml
     \inqmlmodule QtMultimedia
 
-    This type is part of the \b{QtMultimedia 5.0} module.
-
     CameraExposure allows you to adjust exposure related settings
     like aperture and shutter speed, metering and ISO speed.
 
@@ -61,8 +51,6 @@ QT_BEGIN_NAMESPACE
     \c exposure property of the a \l Camera should be used.
 
     \qml
-    import QtQuick 2.0
-    import QtMultimedia 5.0
 
     Camera {
         id: camera
@@ -349,16 +337,26 @@ void QDeclarativeCameraExposure::setAutoIsoSensitivity()
     \row \li Camera.ExposureLargeAperture \li Use larger aperture with small depth of field.
     \row \li Camera.ExposureSmallAperture \li Use smaller aperture.
     \row \li Camera.ExposurePortrait      \li Portrait exposure mode.
+    \row \li Camera.ExposureAction        \li Action exposure mode.  Since 5.5
+    \row \li Camera.ExposureLandscape     \li Landscape exposure mode.  Since 5.5
+    \row \li Camera.ExposureNightPortrait \li Night portrait exposure mode.  Since 5.5
+    \row \li Camera.ExposureTheatre       \li Theatre exposure mode.  Since 5.5
+    \row \li Camera.ExposureSunset        \li Sunset exposure mode.  Since 5.5
+    \row \li Camera.ExposureSteadyPhoto   \li Steady photo exposure mode.  Since 5.5
+    \row \li Camera.ExposureFireworks     \li Fireworks exposure mode.  Since 5.5
+    \row \li Camera.ExposureParty         \li Party exposure mode.  Since 5.5
+    \row \li Camera.ExposureCandlelight   \li Candlelight exposure mode.  Since 5.5
+    \row \li Camera.ExposureBarcode       \li Barcode exposure mode.  Since 5.5
     \row \li Camera.ExposureModeVendor    \li The base value for device specific exposure modes.
     \endtable
 */
 
-QDeclarativeCamera::ExposureMode QDeclarativeCameraExposure::exposureMode() const
+QDeclarativeCameraExposure::ExposureMode QDeclarativeCameraExposure::exposureMode() const
 {
-    return QDeclarativeCamera::ExposureMode(m_exposure->exposureMode());
+    return QDeclarativeCameraExposure::ExposureMode(m_exposure->exposureMode());
 }
 
-void QDeclarativeCameraExposure::setExposureMode(QDeclarativeCamera::ExposureMode mode)
+void QDeclarativeCameraExposure::setExposureMode(QDeclarativeCameraExposure::ExposureMode mode)
 {
     if (exposureMode() != mode) {
         m_exposure->setExposureMode(QCameraExposure::ExposureMode(mode));
@@ -413,14 +411,14 @@ void QDeclarativeCameraExposure::setSpotMeteringPoint(const QPointF &point)
     \row \li Camera.MeteringSpot         \li A specific location (\l spotMeteringPoint) is used to measure exposure.
     \endtable
 */
-QDeclarativeCamera::MeteringMode QDeclarativeCameraExposure::meteringMode() const
+QDeclarativeCameraExposure::MeteringMode QDeclarativeCameraExposure::meteringMode() const
 {
-    return QDeclarativeCamera::MeteringMode(m_exposure->meteringMode());
+    return QDeclarativeCameraExposure::MeteringMode(m_exposure->meteringMode());
 }
 
-void QDeclarativeCameraExposure::setMeteringMode(QDeclarativeCamera::MeteringMode mode)
+void QDeclarativeCameraExposure::setMeteringMode(QDeclarativeCameraExposure::MeteringMode mode)
 {
-    QDeclarativeCamera::MeteringMode oldMode = meteringMode();
+    QDeclarativeCameraExposure::MeteringMode oldMode = meteringMode();
     m_exposure->setMeteringMode(QCameraExposure::MeteringMode(mode));
     if (oldMode != meteringMode())
         emit meteringModeChanged(meteringMode());

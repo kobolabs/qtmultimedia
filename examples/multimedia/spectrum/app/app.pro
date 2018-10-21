@@ -1,7 +1,5 @@
 include(../spectrum.pri)
 
-static: error(This application cannot be statically linked to the fftreal library)
-
 TEMPLATE = app
 
 TARGET = spectrum
@@ -58,6 +56,8 @@ RESOURCES = spectrum.qrc
 
 target.path = $$[QT_INSTALL_EXAMPLES]/multimedia/spectrum
 INSTALLS += target
+
+CONFIG += install_ok  # Do not cargo-cult this!
 
 # Deployment
 

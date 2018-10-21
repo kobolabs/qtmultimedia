@@ -1,7 +1,7 @@
 /****************************************************************************
 **
-** Copyright (C) 2013 Digia Plc and/or its subsidiary(-ies).
-** Contact: http://www.qt-project.org/legal
+** Copyright (C) 2015 The Qt Company Ltd.
+** Contact: http://www.qt.io/licensing/
 **
 ** This file is part of the documentation of the Qt Toolkit.
 **
@@ -10,15 +10,15 @@
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and Digia.  For licensing terms and
-** conditions see http://qt.digia.com/licensing.  For further information
-** use the contact form at http://qt.digia.com/contact-us.
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see http://www.qt.io/terms-conditions. For further
+** information use the contact form at http://www.qt.io/contact-us.
 **
 ** GNU Free Documentation License Usage
 ** Alternatively, this file may be used under the terms of the GNU Free
 ** Documentation License version 1.3 as published by the Free Software
 ** Foundation and appearing in the file included in the packaging of
-** this file.  Please review the following information to ensure
+** this file. Please review the following information to ensure
 ** the GNU Free Documentation License version 1.3 requirements
 ** will be met: http://www.gnu.org/copyleft/fdl.html.
 ** $QT_END_LICENSE$
@@ -26,22 +26,25 @@
 ****************************************************************************/
 
 /*!
-    \example player
+    \example multimediawidgets/player
     \title Media Player Example
     \ingroup multimedia_examples
-    \brief Demonstrates the audio and video playback functionality
+    \brief Playing audio and video.
 
-    This example creates a simple multimedia player. We can play audio and
-    or video files using various codecs.
+    \image mediaplayerex.jpg
+
+    \e{Media Player} demonstrates a simple multimedia player that can play
+    audio and or video files using various codecs.
+
+    \include examples-run.qdocinc
 
     The example uses a QMediaPlayer object passed into a QVideoWidget to
     control the video output. To give the application playlist capability
     we also use a QPlayList object.
 
-    To activate the various functions such as play and stop on the dialog
-    we connect clicked() signals to slots that emit the play() and stop()
-    signals and in turn which we connect to the play() and stop() slots in
-    QMediaPlayer.
+    To activate the various functions such as play and stop on the dialog,
+    the button clicked events emit the play() and stop() signals, which
+    are connected to the play() and stop() slots of QMediaPlayer.
 
     \code
         connect(controls, SIGNAL(play()), player, SLOT(play()));
@@ -71,26 +74,25 @@
     slider) or the QVideoWidget object will update the other object.
 
     \code
-            connect(brightnessSlider, SIGNAL(sliderMoved(int)), videoWidget, 
+            connect(brightnessSlider, SIGNAL(sliderMoved(int)), videoWidget,
                 SLOT(setBrightness(int)));
-            connect(videoWidget, SIGNAL(brightnessChanged(int)), 
+            connect(videoWidget, SIGNAL(brightnessChanged(int)),
                 brightnessSlider, SLOT(setValue(int)));
 
-            connect(contrastSlider, SIGNAL(sliderMoved(int)), videoWidget, 
+            connect(contrastSlider, SIGNAL(sliderMoved(int)), videoWidget,
                 SLOT(setContrast(int)));
-            connect(videoWidget, SIGNAL(contrastChanged(int)), contrastSlider, 
+            connect(videoWidget, SIGNAL(contrastChanged(int)), contrastSlider,
                 SLOT(setValue(int)));
 
-            connect(hueSlider, SIGNAL(sliderMoved(int)), videoWidget, 
+            connect(hueSlider, SIGNAL(sliderMoved(int)), videoWidget,
                 SLOT(setHue(int)));
-            connect(videoWidget, SIGNAL(hueChanged(int)), hueSlider, 
+            connect(videoWidget, SIGNAL(hueChanged(int)), hueSlider,
                 SLOT(setValue(int)));
 
-            connect(saturationSlider, SIGNAL(sliderMoved(int)), videoWidget, 
+            connect(saturationSlider, SIGNAL(sliderMoved(int)), videoWidget,
                 SLOT(setSaturation(int)));
-            connect(videoWidget, SIGNAL(saturationChanged(int)), 
+            connect(videoWidget, SIGNAL(saturationChanged(int)),
                 saturationSlider, SLOT(setValue(int)));
     \endcode
 
 */
-

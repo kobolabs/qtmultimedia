@@ -1,39 +1,31 @@
 /****************************************************************************
 **
 ** Copyright (C) 2012 Research In Motion
-** Contact: http://www.qt-project.org/legal
+** Contact: http://www.qt.io/licensing/
 **
 ** This file is part of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL$
+** $QT_BEGIN_LICENSE:LGPL21$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and Digia.  For licensing terms and
-** conditions see http://qt.digia.com/licensing.  For further information
-** use the contact form at http://qt.digia.com/contact-us.
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see http://www.qt.io/terms-conditions. For further
+** information use the contact form at http://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU Lesser General Public License version 2.1 requirements
-** will be met: http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 2.1 or version 3 as published by the Free
+** Software Foundation and appearing in the file LICENSE.LGPLv21 and
+** LICENSE.LGPLv3 included in the packaging of this file. Please review the
+** following information to ensure the GNU Lesser General Public License
+** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
+** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
 **
-** In addition, as a special exception, Digia gives you certain additional
-** rights.  These rights are described in the Digia Qt LGPL Exception
+** As a special exception, The Qt Company gives you certain additional
+** rights. These rights are described in The Qt Company LGPL Exception
 ** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3.0 as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL included in the
-** packaging of this file.  Please review the following information to
-** ensure the GNU General Public License version 3.0 requirements will be
-** met: http://www.gnu.org/copyleft/gpl.html.
-**
 **
 ** $QT_END_LICENSE$
 **
@@ -97,8 +89,8 @@ bool MmRendererMetaData::parse(const QString &contextName)
 
         const int separatorPos = line.indexOf(separator);
         if (separatorPos != -1) {
-            const QString key = line.left(separatorPos);
-            const QString value = line.mid(separatorPos + separator.length());
+            const QStringRef key = line.leftRef(separatorPos);
+            const QStringRef value = line.midRef(separatorPos + separator.length());
 
             if (key == durationKey)
                 m_duration = value.toLongLong();
@@ -113,15 +105,15 @@ bool MmRendererMetaData::parse(const QString &contextName)
             else if (key == pixelHeightKey)
                 m_pixelHeight = value.toFloat();
             else if (key == titleKey)
-                m_title = value;
+                m_title = value.toString();
             else if (key == seekableKey)
                 m_seekable = !(value == QLatin1String("0"));
             else if (key == artistKey)
-                m_artist = value;
+                m_artist = value.toString();
             else if (key == commentKey)
-                m_comment = value;
+                m_comment = value.toString();
             else if (key == genreKey)
-                m_genre = value;
+                m_genre = value.toString();
             else if (key == yearKey)
                 m_year = value.toInt();
             else if (key == bitRateKey)
@@ -129,7 +121,7 @@ bool MmRendererMetaData::parse(const QString &contextName)
             else if (key == sampleKey)
                 m_sampleRate = value.toInt();
             else if (key == albumKey)
-                m_album = value;
+                m_album = value.toString();
             else if (key == trackKey)
                 m_track = value.toInt();
         }
