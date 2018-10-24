@@ -39,7 +39,7 @@
 #include <QtGui/QPaintEvent>
 #include <QtGui/QPainter>
 
-#if defined(Q_OS_MACOS)
+#if defined(Q_OS_MAC)
 #import <AppKit/AppKit.h>
 #else
 #import <UIKit/UIKit.h>

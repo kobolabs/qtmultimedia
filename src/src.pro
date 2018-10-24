@@ -12,22 +12,6 @@ src_qtmmwidgets.depends = multimedia
 src_plugins.subdir = plugins
 src_plugins.depends = multimedia
 
-
-qtHaveModule(quick) {
-    src_qtmultimediaquicktools.subdir = qtmultimediaquicktools
-    src_qtmultimediaquicktools.depends = multimedia
-
-    src_imports.subdir = imports
-    src_imports.depends = multimedia src_qtmultimediaquicktools
-
-    # For the videonode plugin
-    src_plugins.depends += src_qtmultimediaquicktools
-
-    SUBDIRS += \
-        src_qtmultimediaquicktools \
-        src_imports
-}
-
 # Optional bits
 qtHaveModule(widgets) {
     SUBDIRS += src_qtmmwidgets
