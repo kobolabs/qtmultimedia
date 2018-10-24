@@ -252,7 +252,7 @@ void QGstreamerRecorderControl::applySettings()
             bool found = false;
             foreach (const QString &audioCandidate, audioCandidates) {
                 QSet<QString> audioTypes = audioEncodeControl->supportedStreamTypes(audioCandidate);
-                if (audioTypes.intersects(supportedTypes)) {
+                if (!audioTypes.intersect(supportedTypes).isEmpty()) {
                     found = true;
                     audioCodec = audioCandidate;
                     break;
@@ -266,7 +266,7 @@ void QGstreamerRecorderControl::applySettings()
             bool found = false;
             foreach (const QString &videoCandidate, videoCandidates) {
                 QSet<QString> videoTypes = videoEncodeControl->supportedStreamTypes(videoCandidate);
-                if (videoTypes.intersects(supportedTypes)) {
+                if (!videoTypes.intersect(supportedTypes).isEmpty()) {
                     found = true;
                     videoCodec = videoCandidate;
                     break;
