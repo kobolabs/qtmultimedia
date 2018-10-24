@@ -56,7 +56,7 @@ static void *AVFMediaPlayerSessionObserverRateObservationContext = &AVFMediaPlay
 static void *AVFMediaPlayerSessionObserverStatusObservationContext = &AVFMediaPlayerSessionObserverStatusObservationContext;
 static void *AVFMediaPlayerSessionObserverCurrentItemObservationContext = &AVFMediaPlayerSessionObserverCurrentItemObservationContext;
 
-@interface AVFMediaPlayerSessionObserver : NSObject
+@interface AVFMediaPlayerSessionObserver : NSObject<AVAssetResourceLoaderDelegate>
 {
 @private
     AVFMediaPlayerSession *m_session;
@@ -64,6 +64,7 @@ static void *AVFMediaPlayerSessionObserverCurrentItemObservationContext = &AVFMe
     AVPlayerItem *m_playerItem;
     AVPlayerLayer *m_playerLayer;
     NSURL *m_URL;
+    QByteArray m_bytes;
 }
 
 @property (readonly, getter=player) AVPlayer* m_player;
@@ -72,7 +73,7 @@ static void *AVFMediaPlayerSessionObserverCurrentItemObservationContext = &AVFMe
 @property (readonly, getter=session) AVFMediaPlayerSession* m_session;
 
 - (AVFMediaPlayerSessionObserver *) initWithMediaPlayerSession:(AVFMediaPlayerSession *)session;
-- (void) setURL:(NSURL *)url;
+- (void) setURL:(NSURL *)url withStream:(QIODevice *)stream;
 - (void) unloadMedia;
 - (void) prepareToPlayAsset:(AVURLAsset *)asset withKeys:(NSArray *)requestedKeys;
 - (void) assetFailedToPrepareForPlayback:(NSError *)error;
@@ -97,12 +98,18 @@ static void *AVFMediaPlayerSessionObserverCurrentItemObservationContext = &AVFMe
     return self;
 }
 
-- (void) setURL:(NSURL *)url
+- (void) setURL:(NSURL *)url withStream:(QIODevice *)stream
 {
     if (m_URL != url)
     {
         [m_URL release];
         m_URL = [url copy];
+
+
+        if (stream && stream->isOpen())
+        {
+            m_bytes = stream->readAll();
+        }
 
         //Create an asset for inspection of a resource referenced by a given URL.
         //Load the values for the asset keys "tracks", "playable".
@@ -110,6 +117,8 @@ static void *AVFMediaPlayerSessionObserverCurrentItemObservationContext = &AVFMe
         // use __block to avoid maintaining strong references on variables captured by the
         // following block callback
         __block AVURLAsset *asset = [[AVURLAsset URLAssetWithURL:m_URL options:nil] retain];
+        __block AVAssetResourceLoader *loader = [asset resourceLoader];
+         [loader setDelegate:self queue:dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0)];
         __block NSArray *requestedKeys = [[NSArray arrayWithObjects:AVF_TRACKS_KEY, AVF_PLAYABLE_KEY, nil] retain];
 
         __block AVFMediaPlayerSessionObserver *blockSelf = self;
@@ -127,6 +136,25 @@ static void *AVFMediaPlayerSessionObserverCurrentItemObservationContext = &AVFMe
                             });
          }];
     }
+}
+
+- (BOOL) resourceLoader:(AVAssetResourceLoader *)resourceLoader shouldWaitForLoadingOfRequestedResource:(AVAssetResourceLoadingRequest *)loadingRequest
+{
+    Q_UNUSED(resourceLoader)
+    if (m_bytes.isEmpty())
+    {
+        return NO;
+    }
+
+    loadingRequest.contentInformationRequest.contentLength = m_bytes.size();
+    loadingRequest.contentInformationRequest.byteRangeAccessSupported = YES;
+
+    CFStringRef contentType = UTTypeCreatePreferredIdentifierForTag(kUTTagClassMIMEType, CFSTR("application/octet-stream"), NULL);
+    loadingRequest.contentInformationRequest.contentType = CFBridgingRelease(contentType);
+    loadingRequest.response = [[NSURLResponse alloc] initWithURL:m_URL MIMEType:nil expectedContentLength:m_bytes.size() textEncodingName:nil];
+    [loadingRequest.dataRequest respondWithData:[NSData dataWithBytesNoCopy:(void *) (m_bytes.constData() + loadingRequest.dataRequest.requestedOffset) length:(NSUInteger) loadingRequest.dataRequest.requestedLength freeWhenDone:NO]];
+    [loadingRequest finishLoading];
+    return YES;
 }
 
 - (void) unloadMedia
@@ -471,7 +499,7 @@ void AVFMediaPlayerSession::setMedia(const QMediaContent &content, QIODevice *st
     const QMediaPlayer::MediaStatus oldMediaStatus = m_mediaStatus;
     const QMediaPlayer::State oldState = m_state;
 
-    if (content.isNull() || content.canonicalUrl().isEmpty()) {
+    if (!stream && (content.isNull() || content.canonicalUrl().isEmpty())) {
         m_mediaStatus = QMediaPlayer::NoMedia;
         m_state = QMediaPlayer::StoppedState;
 
@@ -493,7 +521,7 @@ void AVFMediaPlayerSession::setMedia(const QMediaContent &content, QIODevice *st
     //initialize asset using content's URL
     NSString *urlString = [NSString stringWithUTF8String:content.canonicalUrl().toEncoded().constData()];
     NSURL *url = [NSURL URLWithString:urlString];
-    [(AVFMediaPlayerSessionObserver*)m_observer setURL:url];
+    [(AVFMediaPlayerSessionObserver*)m_observer setURL:url withStream:m_mediaStream];
 }
 
 qint64 AVFMediaPlayerSession::position() const
