@@ -94,16 +94,10 @@ QVideoSurfaceGenericPainter::QVideoSurfaceGenericPainter()
     , m_scanLineDirection(QVideoSurfaceFormat::TopToBottom)
     , m_mirrored(false)
 {
-    m_imagePixelFormats << QVideoFrame::Format_RGB32;
-
-    // The raster formats should be a subset of the GL formats.
-#ifndef QT_NO_OPENGL
-    if (QOpenGLContext::openGLModuleType() != QOpenGLContext::LibGLES)
-#endif
-        m_imagePixelFormats << QVideoFrame::Format_RGB24;
-
-     m_imagePixelFormats << QVideoFrame::Format_ARGB32
-                         << QVideoFrame::Format_RGB565;
+    m_imagePixelFormats << QVideoFrame::Format_RGB32
+                        << QVideoFrame::Format_ARGB32
+                        << QVideoFrame::Format_RGB24
+                        << QVideoFrame::Format_RGB565;
 }
 
 QList<QVideoFrame::PixelFormat> QVideoSurfaceGenericPainter::supportedPixelFormats(
@@ -143,11 +137,7 @@ QAbstractVideoSurface::Error QVideoSurfaceGenericPainter::start(const QVideoSurf
 
     const QAbstractVideoBuffer::HandleType t = format.handleType();
     if (t == QAbstractVideoBuffer::NoHandle) {
-        bool ok = m_imageFormat != QImage::Format_Invalid && !m_imageSize.isEmpty();
-#ifndef QT_NO_OPENGL
-        if (QOpenGLContext::openGLModuleType() == QOpenGLContext::LibGLES)
-            ok &= format.pixelFormat() != QVideoFrame::Format_RGB24;
-#endif
+        bool ok = m_imageFormat != QImage::Format_Invalid && !m_imageSize.isEmpty() && format.pixelFormat() != QVideoFrame::Format_RGB24;
         if (ok)
             return QAbstractVideoSurface::NoError;
     } else if (t == QAbstractVideoBuffer::QPixmapHandle) {
@@ -1078,12 +1068,9 @@ QVideoSurfaceGlslPainter::QVideoSurfaceGlslPainter(QGLContext *context)
     m_imagePixelFormats
             << QVideoFrame::Format_RGB32
             << QVideoFrame::Format_BGR32
-            << QVideoFrame::Format_ARGB32;
-    if (!context->contextHandle()->isOpenGLES()) {
-        m_imagePixelFormats
+            << QVideoFrame::Format_ARGB32
             << QVideoFrame::Format_RGB24
             << QVideoFrame::Format_BGR24;
-    }
     m_imagePixelFormats
             << QVideoFrame::Format_RGB565
             << QVideoFrame::Format_YUV444
@@ -1122,16 +1109,12 @@ QAbstractVideoSurface::Error QVideoSurfaceGlslPainter::start(const QVideoSurface
             fragmentProgram = qt_glsl_argbShaderProgram;
             break;
         case QVideoFrame::Format_RGB24:
-            if (!m_context->contextHandle()->isOpenGLES()) {
-                initRgbTextureInfo(GL_RGB8, GL_RGB, GL_UNSIGNED_BYTE, format.frameSize());
-                fragmentProgram = qt_glsl_rgbShaderProgram;
-            }
+            initRgbTextureInfo(GL_RGB8, GL_RGB, GL_UNSIGNED_BYTE, format.frameSize());
+            fragmentProgram = qt_glsl_rgbShaderProgram;
             break;
         case QVideoFrame::Format_BGR24:
-            if (!m_context->contextHandle()->isOpenGLES()) {
-                initRgbTextureInfo(GL_RGB8, GL_RGB, GL_UNSIGNED_BYTE, format.frameSize());
-                fragmentProgram = qt_glsl_argbShaderProgram;
-            }
+            initRgbTextureInfo(GL_RGB8, GL_RGB, GL_UNSIGNED_BYTE, format.frameSize());
+            fragmentProgram = qt_glsl_argbShaderProgram;
             break;
         case QVideoFrame::Format_RGB565:
             initRgbTextureInfo(GL_RGB, GL_RGB, GL_UNSIGNED_SHORT_5_6_5, format.frameSize());
@@ -1614,7 +1597,7 @@ void QPainterVideoSurface::setGLContext(QGLContext *context)
         m_glContext->makeCurrent();
 
         const QByteArray extensions(reinterpret_cast<const char *>(
-                                        context->contextHandle()->functions()->glGetString(GL_EXTENSIONS)));
+                                        glGetString(GL_EXTENSIONS)));
 #if !defined(QT_OPENGL_ES) && !defined(QT_OPENGL_DYNAMIC)
         if (extensions.contains("ARB_fragment_program"))
             m_shaderTypes |= FragmentProgramShader;

@@ -29,7 +29,7 @@ win32:!winrt {
     SUBDIRS += audiocapture \
                windowsaudio
 
-    config_directshow: SUBDIRS += directshow
+    !win32-msvc20*: config_directshow: SUBDIRS += directshow
     config_wmf: SUBDIRS += wmf
 }
 
