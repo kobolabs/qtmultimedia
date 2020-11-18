@@ -165,7 +165,12 @@ QGstreamerPlayerSession::QGstreamerPlayerSession(QObject *parent)
 #endif
         g_object_set(G_OBJECT(m_playbin), "flags", flags, NULL);
 
-        GstElement *audioSink = gst_element_factory_make("autoaudiosink", "audiosink");
+        QByteArray defaultAudioSink = qgetenv("QT_GSTREAMER_PLAYBIN_AUDIOSINK");
+        if (defaultAudioSink.isEmpty()) {
+            defaultAudioSink = "autoaudiosink";
+        }
+
+        GstElement *audioSink = gst_element_factory_make(defaultAudioSink.constData(), defaultAudioSink.constData());
         if (audioSink) {
             if (usePlaybinVolume()) {
                 m_audioSink = audioSink;
@@ -305,6 +310,21 @@ void QGstreamerPlayerSession::loadFromStream(const QNetworkRequest &request, QIO
     if (!m_appSrc)
         m_appSrc = new QGstAppSrc(this);
     m_appSrc->setStream(appSrcStream);
+
+    if (m_audioSink) {
+        QByteArray device = request.url().toString().toUtf8();
+        GstIterator *sink_iterator = gst_bin_iterate_recurse(GST_BIN(m_audioSink));
+        GValue item = G_VALUE_INIT;
+        while (gst_iterator_next (sink_iterator, &item) == GST_ITERATOR_OK) {
+            gpointer obj = g_value_get_object(&item);
+            const char *name = gst_element_get_name(obj);
+            if (!strcmp(name, "alsasink")) {
+                g_object_set(obj, "device", device.constData(), NULL);
+            }
+        }
+        g_value_unset(&item);
+        gst_iterator_free(sink_iterator);
+    }
 
     if (m_playbin) {
         m_tags.clear();
