@@ -400,11 +400,12 @@ void QGstreamerPlayerSession::setPlaybackRate(qreal rate)
 #endif
     if (!qFuzzyCompare(m_playbackRate, rate)) {
         m_playbackRate = rate;
-        if (m_playbin && m_seekable) {
+        if (m_playbin) {
+            qint64 pos = position() * 1000000;
             gst_element_seek(m_playbin, rate, GST_FORMAT_TIME,
-                             GstSeekFlags(GST_SEEK_FLAG_FLUSH),
-                             GST_SEEK_TYPE_NONE,0,
-                             GST_SEEK_TYPE_NONE,0 );
+                             GstSeekFlags(GST_SEEK_FLAG_FLUSH | GST_SEEK_FLAG_ACCURATE),
+                             GST_SEEK_TYPE_SET, pos,
+                             GST_SEEK_TYPE_SET, -1 );
         }
         emit playbackRateChanged(m_playbackRate);
     }
