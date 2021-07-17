@@ -180,8 +180,10 @@ QGstreamerPlayerSession::QGstreamerPlayerSession(QObject *parent)
                 if (m_volumeElement) {
                     m_audioSink = gst_bin_new("audio-output-bin");
 
-                    gst_bin_add_many(GST_BIN(m_audioSink), m_volumeElement, audioSink, NULL);
-                    gst_element_link(m_volumeElement, audioSink);
+                    GstElement *scaletempo = gst_element_factory_make("scaletempo", "scaletempo");
+
+                    gst_bin_add_many(GST_BIN(m_audioSink), m_volumeElement, scaletempo, audioSink, NULL);
+                    gst_element_link_many(m_volumeElement, scaletempo, audioSink, NULL);
 
                     GstPad *pad = gst_element_get_static_pad(m_volumeElement, "sink");
                     gst_element_add_pad(GST_ELEMENT(m_audioSink), gst_ghost_pad_new("sink", pad));
