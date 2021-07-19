@@ -124,7 +124,18 @@ static void addTagToMap(const GstTagList *list,
                 if (denom > 0) {
                     map->insert(QByteArray(tag), double(nom)/denom);
                 }
+            } else if (G_VALUE_TYPE(&val) == GST_TYPE_SAMPLE) {
+                GstSample *sample = gst_value_get_sample(&val);
+                if (!qstrcmp(tag, "image") && !map->contains("image")) {
+                    GstBuffer *buffer = gst_sample_get_buffer(sample);
+                    int size = gst_buffer_get_size(buffer);
+                    QByteArray image;
+                    image.resize(size);
+                    gst_buffer_extract(buffer, 0, image.data(), size);
+                    map->insert("image", image);
+                }
             }
+
             break;
     }
 

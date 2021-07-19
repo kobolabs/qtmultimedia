@@ -85,6 +85,7 @@ static const QGstreamerMetaDataKeyLookup *qt_gstreamerMetaDataKeys()
         //metadataKeys->insert(0, QMediaMetaData::Mood);
         metadataKeys->insert(GST_TAG_TRACK_NUMBER, QMediaMetaData::TrackNumber);
 
+        metadataKeys->insert(GST_TAG_IMAGE, QMediaMetaData::CoverArtImage);
         //metadataKeys->insert(0, QMediaMetaData::CoverArtUrlSmall);
         //metadataKeys->insert(0, QMediaMetaData::CoverArtUrlLarge);
 
