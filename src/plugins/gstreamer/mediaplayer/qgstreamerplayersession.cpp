@@ -55,6 +55,8 @@
 #include <QtCore/qdebug.h>
 #include <QtCore/qdir.h>
 #include <QtCore/qstandardpaths.h>
+#include <QtNetwork/qnetworkaccessmanager.h>
+#include <QtNetwork/qnetworkreply.h>
 
 //#define DEBUG_PLAYBIN
 //#define DEBUG_VO_BIN_DUMP
@@ -348,6 +350,14 @@ void QGstreamerPlayerSession::loadFromUri(const QNetworkRequest &request)
         m_appSrc = 0;
     }
 #endif
+
+    auto _kobo_nam = parent()->property("_kobo_nam");
+    if (!_kobo_nam.isNull()) {
+        auto nam = _kobo_nam.value<QNetworkAccessManager *>();
+        QNetworkReply *reply = nam->get(request);
+        loadFromStream(request, reply);
+        return;
+    }
 
     if (m_playbin) {
         m_tags.clear();
