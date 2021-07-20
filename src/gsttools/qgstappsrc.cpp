@@ -74,11 +74,11 @@ bool QGstAppSrc::setup(GstElement* appsrc)
     g_object_get(G_OBJECT(m_appSrc), "max-bytes", &m_maxBytes, NULL);
 
     if (m_sequential)
-        m_streamType = GST_APP_STREAM_TYPE_STREAM;
+        m_streamType = GST_APP_STREAM_TYPE_SEEKABLE;
     else
         m_streamType = GST_APP_STREAM_TYPE_RANDOM_ACCESS;
     gst_app_src_set_stream_type(m_appSrc, m_streamType);
-    gst_app_src_set_size(m_appSrc, (m_sequential) ? -1 : m_stream->size());
+    gst_app_src_set_size(m_appSrc, m_stream->size());
 
     return true;
 }
