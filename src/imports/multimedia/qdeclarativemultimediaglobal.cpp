@@ -177,4 +177,57 @@ QJSValue QDeclarativeMultimediaGlobal::availableCameras() const
     return availableCameras;
 }
 
+/*!
+    \qmlmethod real QtMultimedia::QtMultimedia::convertVolume(real volume, VolumeScale from, VolumeScale to)
+
+    Converts an audio \a volume \a from a volume scale \a to another, and returns the result.
+
+    Depending on the context, different scales are used to represent audio volume. All Qt Multimedia
+    classes that have an audio volume use a linear scale, the reason is that the loudness of a
+    speaker is controlled by modulating its voltage on a linear scale. The human ear on the other
+    hand, perceives loudness in a logarithmic way. Using a logarithmic scale for volume controls
+    is therefore appropriate in most applications. The decibel scale is logarithmic by nature and
+    is commonly used to define sound levels, it is usually used for UI volume controls in
+    professional audio applications. The cubic scale is a computationally cheap approximation of a
+    logarithmic scale, it provides more control over lower volume levels.
+
+    Valid values for \a from and \a to are:
+    \list
+    \li QtMultimedia.LinearVolumeScale - Linear scale. \c 0.0 (0%) is silence and \c 1.0 (100%) is
+        full volume. All Qt Multimedia types that have an audio volume use a linear scale.
+    \li QtMultimedia.CubicVolumeScale - Cubic scale. \c 0.0 (0%) is silence and \c 1.0 (100%) is full
+        volume.
+    \li QtMultimedia.LogarithmicVolumeScale - Logarithmic scale. \c 0.0 (0%) is silence and \c 1.0
+        (100%) is full volume. UI volume controls should usually use a logarithmic scale.
+    \li QtMultimedia.DecibelVolumeScale - Decibel (dB, amplitude) logarithmic scale. \c -200 is
+        silence and \c 0 is full volume.
+    \endlist
+
+    The following example shows how the volume value from a UI volume control can be converted so
+    that the perceived increase in loudness is the same when increasing the volume control from 0.2
+    to 0.3 as it is from 0.5 to 0.6:
+
+    \code
+    Slider {
+        id: volumeSlider
+
+        property real volume: QtMultimedia.convertVolume(volumeSlider.value,
+                                                         QtMultimedia.LogarithmicVolumeScale,
+                                                         QtMultimedia.LinearVolumeScale)
+    }
+
+    MediaPlayer {
+        volume: volumeSlider.volume
+    }
+    \endcode
+
+    \since 5.8
+*/
+qreal QDeclarativeMultimediaGlobal::convertVolume(qreal volume,
+                                                  QDeclarativeMultimediaGlobal::VolumeScale from,
+                                                  QDeclarativeMultimediaGlobal::VolumeScale to) const
+{
+    return QAudio::convertVolume(volume, QAudio::VolumeScale(from), QAudio::VolumeScale(to));
+}
+
 QT_END_NAMESPACE
