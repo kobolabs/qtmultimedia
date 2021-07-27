@@ -35,6 +35,7 @@
 #include <qaudio.h>
 #include <qmath.h>
 #include <QDebug>
+#include <cmath>
 
 QT_BEGIN_NAMESPACE
 
