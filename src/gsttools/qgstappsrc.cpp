@@ -144,10 +144,15 @@ void QGstAppSrc::pushDataToAppSrc()
 
     if (m_dataRequested && !m_enoughData) {
         qint64 size;
-        if (m_dataRequestSize == ~0u)
-            size = qMin(m_stream->bytesAvailable(), queueSize());
-        else
-            size = qMin(m_stream->bytesAvailable(), (qint64)m_dataRequestSize);
+
+        if (m_streamType != GST_APP_STREAM_TYPE_RANDOM_ACCESS) {
+            if (m_dataRequestSize == ~0u)
+                size = qMin(m_stream->bytesAvailable(), queueSize());
+            else
+                size = qMin(m_stream->bytesAvailable(), (qint64)m_dataRequestSize);
+        } else {
+                size = 1000000;
+        }
 
         if (size) {
             GstBuffer* buffer = gst_buffer_new_and_alloc(size);
