@@ -248,9 +248,6 @@ void QMediaPlayerPrivate::_q_error(int error, const QString &errorString)
         this->error = QMediaPlayer::Error(error);
         this->errorString = errorString;
         emit q->error(this->error);
-
-        if (playlist)
-            playlist->next();
     }
 }
 
