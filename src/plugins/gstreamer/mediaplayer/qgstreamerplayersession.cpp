@@ -173,6 +173,7 @@ QGstreamerPlayerSession::QGstreamerPlayerSession(QObject *parent)
         }
 
         GstElement *audioSink = gst_element_factory_make(defaultAudioSink.constData(), defaultAudioSink.constData());
+        m_sink = audioSink;
         if (audioSink) {
             QByteArray defaultAudioSinkDeviceParameters = qgetenv("QT_GSTREAMER_PLAYBIN_AUDIOSINK_DEVICE_PARAMETER");
             g_object_set(audioSink, "device", defaultAudioSinkDeviceParameters.constData(), NULL);
@@ -279,6 +280,18 @@ QGstreamerPlayerSession::~QGstreamerPlayerSession()
     }
 }
 
+void QGstreamerPlayerSession::refreshAudioSinkDevice()
+{
+    gchar* currentDeviceParam = 0;
+    g_object_get(m_sink, "device", &currentDeviceParam, NULL);
+
+    auto defaultAudioSinkDeviceParameters = qgetenv("QT_GSTREAMER_PLAYBIN_AUDIOSINK_DEVICE_PARAMETER");
+    if (!defaultAudioSinkDeviceParameters.isEmpty() && qstrcmp(currentDeviceParam, defaultAudioSinkDeviceParameters.constData()) != 0) {
+        g_object_set(m_sink, "device", defaultAudioSinkDeviceParameters.constData(), NULL);
+    }
+    g_free(currentDeviceParam);
+}
+
 GstElement *QGstreamerPlayerSession::playbin() const
 {
     return m_playbin;
@@ -321,6 +334,8 @@ void QGstreamerPlayerSession::loadFromStream(const QNetworkRequest &request, QIO
     if (m_playbin) {
         m_tags.clear();
         emit tagsChanged();
+
+        refreshAudioSinkDevice();
 
         g_object_set(G_OBJECT(m_playbin), "uri", "appsrc://", NULL);
 

@@ -124,6 +124,7 @@ public:
     void removeProbe(QGstreamerAudioProbeControl* probe);
 
     void endOfMediaReset();
+    void refreshAudioSinkDevice();
 
 public slots:
     void loadFromUri(const QNetworkRequest &url);
@@ -251,6 +252,8 @@ private:
 
     bool m_isPlaylist;
     gulong pad_probe_id;
+
+    GstElement* m_sink;
 };
 
 QT_END_NAMESPACE
