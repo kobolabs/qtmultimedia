@@ -71,12 +71,8 @@ bool QGstAppSrc::setup(GstElement* appsrc)
     gst_object_ref(G_OBJECT(m_appSrc));
     gst_app_src_set_callbacks(m_appSrc, (GstAppSrcCallbacks*)&m_callbacks, this, (GDestroyNotify)&QGstAppSrc::destroy_notify);
 
-    g_object_get(G_OBJECT(m_appSrc), "max-bytes", &m_maxBytes, NULL);
-
-    if (m_sequential)
-        m_streamType = GST_APP_STREAM_TYPE_SEEKABLE;
-    else
-        m_streamType = GST_APP_STREAM_TYPE_RANDOM_ACCESS;
+    m_maxBytes = gst_app_src_get_max_bytes(m_appSrc);
+    m_streamType = GST_APP_STREAM_TYPE_SEEKABLE;
     gst_app_src_set_stream_type(m_appSrc, m_streamType);
     gst_app_src_set_size(m_appSrc, m_stream->size());
 
@@ -105,6 +101,7 @@ void QGstAppSrc::setStream(QIODevice *stream)
 
     if (stream) {
         m_stream = stream;
+        m_stream->reset();
         connect(m_stream, SIGNAL(destroyed()), SLOT(streamDestroyed()));
         connect(m_stream, SIGNAL(readyRead()), this, SLOT(onDataReady()));
         m_sequential = m_stream->isSequential();
@@ -144,15 +141,10 @@ void QGstAppSrc::pushDataToAppSrc()
 
     if (m_dataRequested && !m_enoughData) {
         qint64 size;
-
-        if (m_streamType != GST_APP_STREAM_TYPE_RANDOM_ACCESS) {
-            if (m_dataRequestSize == ~0u)
-                size = qMin(m_stream->bytesAvailable(), queueSize());
-            else
-                size = qMin(m_stream->bytesAvailable(), (qint64)m_dataRequestSize);
-        } else {
-                size = 1000000;
-        }
+        if (m_dataRequestSize == ~0u)
+            size = qMin(m_stream->bytesAvailable(), queueSize());
+        else
+            size = qMin(m_stream->bytesAvailable(), (qint64)m_dataRequestSize);
 
         if (size) {
             GstBuffer* buffer = gst_buffer_new_and_alloc(size);
