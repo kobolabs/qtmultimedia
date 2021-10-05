@@ -1511,6 +1511,13 @@ void QGstreamerPlayerSession::updateDuration()
         if (gst_element_query(m_playbin, query))
             gst_query_parse_seeking(query, 0, &seekable, 0, 0);
         gst_query_unref(query);
+    } else {
+#if defined(HAVE_GST_APPSRC)
+        if (m_appSrc && m_appSrc->stream()) {
+            m_durationQueries = 0;
+            seekable = !m_appSrc->stream()->isSequential();
+        }
+#endif
     }
     setSeekable(seekable);
 
