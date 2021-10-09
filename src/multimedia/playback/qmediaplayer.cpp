@@ -193,7 +193,6 @@ void QMediaPlayerPrivate::_q_stateChanged(QMediaPlayer::State ps)
             // we have finished playback for the current media,
             // advance to the next item in the playlist
             Q_ASSERT(state != QMediaPlayer::StoppedState);
-            playlist->next();
             return;
         } else if (control->mediaStatus() == QMediaPlayer::LoadingMedia) {
             return;
